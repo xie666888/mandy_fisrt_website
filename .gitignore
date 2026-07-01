@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets and runtime configuration
+.env
+.env.*
+*.env
+*.key
+*.pem
+
+# Databases and runtime state
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+
+# Product data and media
+src/assets/
+src/data/*
+!src/data/catalog.js
+!src/data/catalog.json
+*.xlsx
+*.xlsm
+*.xls
+
+# Backups and deployment artifacts
+backups/
+*.zip
+*.tar
+*.tar.gz
+deploy*.sh
+deploy*.ps1
+ECS_SQLITE_DEPLOYMENT.md
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
