@@ -232,7 +232,8 @@ For each release, check at minimum:
 
 - Tencent creates a complete daily backup and retains the newest three.
 - Backups include application source, uploads, a consistent SQLite snapshot,
-  environment/service configuration, and Nginx configuration.
+  environment/service configuration, Nginx configuration, TLS certificate and
+  private key, Fail2ban jail configuration, and replication units.
 - Alibaba is a warm standby, not a substitute for versioned backups.
 - Before restoring, validate the archive and database integrity. Stop the app,
   restore atomically, fix ownership to `luxe:luxe`, start the service, and run
