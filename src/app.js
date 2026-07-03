@@ -586,7 +586,7 @@
         ${activeFilterChips()}
       </div>
       <main class="content">
-        <div class="section-title compact-title"><div><h2>Products</h2><p>${list.length} matching items</p></div></div>
+        <div class="section-title compact-title"><div><h1>Wholesale Beauty Products</h1><p>${list.length} matching items</p></div></div>
         <div class="grid">
           ${list.map(productCard).join("")}
         </div>

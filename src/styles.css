@@ -181,8 +181,8 @@ button { cursor: pointer; }
 }
 .filter-chips span { margin-left: 4px; }
 .section-title { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
-.section-title h2 { margin: 0; font-family: Arial, sans-serif; font-size: clamp(28px, 4vw, 48px); }
-.compact-title h2 { font-size: clamp(26px, 3vw, 36px); }
+.section-title h1, .section-title h2 { margin: 0; font-family: Arial, sans-serif; font-size: clamp(28px, 4vw, 48px); }
+.compact-title h1, .compact-title h2 { font-size: clamp(26px, 3vw, 36px); }
 .section-title p { margin: 0; color: var(--muted); }
 .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
 .card {

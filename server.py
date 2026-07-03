@@ -386,7 +386,7 @@ def build_product_page(product, related_products):
     <meta property="og:url" content="{html.escape(canonical, quote=True)}">
     {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/src/styles.css?v=20260703-seo1">
+    <link rel="stylesheet" href="/src/styles.css?v=20260703-seo2">
     <script type="application/ld+json">{seo_json(product_schema)}</script>
     <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
     <script type="application/ld+json">{seo_json(faq_schema)}</script>
@@ -409,7 +409,7 @@ def build_product_page(product, related_products):
         <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
       </main>
     </div>
-    <script src="/src/app.js?v=20260703-seo1"></script>
+    <script src="/src/app.js?v=20260703-seo2"></script>
   </body>
 </html>
 """
