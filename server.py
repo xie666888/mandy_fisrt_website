@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import hmac
+import html
 import io
 import json
 import logging
@@ -15,7 +16,7 @@ import re
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 try:
     from PIL import Image as _PILImage
@@ -46,6 +47,38 @@ MAX_IMAGE_BATCH_UPLOAD_BYTES = 220 * 1024 * 1024
 MAX_JSON_BYTES = 10 * 1024 * 1024
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 HTTPS_ENABLED = os.environ.get("HTTPS", "0") == "1"
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://bebeauty.top").rstrip("/")
+
+SEO_SITE_NAME = "BeBeauty Wholesale Catalog"
+SEO_HOME_DESCRIPTION = (
+    "Browse wholesale cosmetics and beauty products by brand, category, SKU, "
+    "shade and price. Create an order number for supplier confirmation."
+)
+SEO_FAQ = [
+    (
+        "Are these products authentic?",
+        "No. These are replica products and are not sold as authentic branded goods.",
+    ),
+    (
+        "Can every product be scanned in the Sephora app?",
+        "No. Sephora app scanning is not guaranteed for these products.",
+    ),
+    (
+        "How does the order process work?",
+        "Add products, shades and quantities to the cart, create an order number, "
+        "then confirm availability and the Alibaba payment link through WhatsApp.",
+    ),
+    (
+        "How long does delivery take?",
+        "Goods are normally sent to the forwarder within three working days after "
+        "payment. Forwarder delivery is usually 12 to 15 days.",
+    ),
+    (
+        "What happens if goods are damaged during transportation?",
+        "A replacement can be sent with the next order or the damaged item cost can "
+        "be refunded after confirmation.",
+    ),
+]
 
 _local = threading.local()
 
@@ -72,6 +105,16 @@ def json_response(handler, status, payload):
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Cache-Control", "no-store, max-age=0")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def text_response(handler, status, text, content_type, cache_control="public, max-age=3600"):
+    body = text.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Cache-Control", cache_control)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -211,6 +254,165 @@ def product_from_row(row):
     product.pop("colors_json", None)
     product.pop("images_json", None)
     return product
+
+
+def product_page_url(product_id):
+    return f"{PUBLIC_BASE_URL}/product/{quote(str(product_id), safe='')}"
+
+
+def absolute_media_url(value):
+    value = str(value or "").strip().replace("\\", "/")
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        return value
+    path = value.removeprefix("./").lstrip("/")
+    return f"{PUBLIC_BASE_URL}/{quote(path, safe='/%:@?&=+$,;~.-_')}"
+
+
+def seo_description(product):
+    description = re.sub(r"\s+", " ", str(product.get("description") or "")).strip()
+    identity = " ".join(
+        part
+        for part in [
+            str(product.get("name") or "").strip(),
+            f"by {str(product.get('brand') or '').strip()}" if product.get("brand") else "",
+            f"SKU {str(product.get('sku') or '').strip()}" if product.get("sku") else "",
+        ]
+        if part
+    )
+    suffix = "Wholesale beauty catalog with shade selection and order-number confirmation."
+    text = ". ".join(part.rstrip(".") for part in [identity, description, suffix] if part)
+    return text[:157].rstrip(" ,.;") + "."
+
+
+def seo_json(data):
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+
+
+def build_product_page(product, related_products):
+    name = str(product.get("name") or product.get("sku") or "Wholesale beauty product")
+    brand = str(product.get("brand") or "Unbranded")
+    category = str(product.get("category") or "Cosmetics")
+    sku = str(product.get("sku") or product.get("id") or "")
+    description = seo_description(product)
+    canonical = product_page_url(product.get("id") or sku)
+    image = absolute_media_url(product.get("image"))
+    images = [absolute_media_url(item) for item in product.get("images") or []]
+    images = [item for item in dict.fromkeys([image, *images]) if item]
+    title = f"{name} Wholesale | {brand} | BeBeauty"
+    price = f"{float(product.get('price') or 0):.2f}"
+
+    product_schema = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": name,
+        "sku": sku,
+        "category": category,
+        "description": description,
+        "url": canonical,
+        "brand": {"@type": "Brand", "name": brand},
+        "offers": {
+            "@type": "Offer",
+            "url": canonical,
+            "priceCurrency": "USD",
+            "price": price,
+            "seller": {
+                "@type": "Organization",
+                "name": SEO_SITE_NAME,
+                "url": PUBLIC_BASE_URL,
+            },
+        },
+    }
+    if images:
+        product_schema["image"] = images
+    breadcrumb_schema = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Wholesale beauty products",
+                "item": f"{PUBLIC_BASE_URL}/",
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": brand,
+                "item": f"{PUBLIC_BASE_URL}/?brand={quote(brand)}",
+            },
+            {"@type": "ListItem", "position": 3, "name": name, "item": canonical},
+        ],
+    }
+    faq_schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": question,
+                "acceptedAnswer": {"@type": "Answer", "text": answer},
+            }
+            for question, answer in SEO_FAQ
+        ],
+    }
+    related_html = "".join(
+        f'<li><a href="{html.escape(product_page_url(item["id"]), quote=True)}">'
+        f'{html.escape(str(item["name"]))}</a> by {html.escape(str(item["brand"]))}</li>'
+        for item in related_products
+    )
+    image_html = (
+        f'<img src="{html.escape(image, quote=True)}" alt="{html.escape(name, quote=True)}" '
+        'width="395" height="395" loading="eager">'
+        if image
+        else ""
+    )
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{html.escape(title)}</title>
+    <meta name="description" content="{html.escape(description, quote=True)}">
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+    <link rel="canonical" href="{html.escape(canonical, quote=True)}">
+    <link rel="alternate" hreflang="en" href="{html.escape(canonical, quote=True)}">
+    <link rel="alternate" hreflang="x-default" href="{html.escape(canonical, quote=True)}">
+    <meta property="og:type" content="product">
+    <meta property="og:site_name" content="{html.escape(SEO_SITE_NAME, quote=True)}">
+    <meta property="og:title" content="{html.escape(title, quote=True)}">
+    <meta property="og:description" content="{html.escape(description, quote=True)}">
+    <meta property="og:url" content="{html.escape(canonical, quote=True)}">
+    {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="/src/styles.css?v=20260703-seo1">
+    <script type="application/ld+json">{seo_json(product_schema)}</script>
+    <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
+    <script type="application/ld+json">{seo_json(faq_schema)}</script>
+  </head>
+  <body>
+    <div id="app">
+      <main class="detail seo-product">
+        <nav aria-label="Breadcrumb"><a href="/">Wholesale beauty products</a> / {html.escape(brand)}</nav>
+        <article class="detail-layout">
+          <div class="gallery"><div class="product-image">{image_html}</div></div>
+          <section>
+            <p>{html.escape(brand)} · {html.escape(category)} · SKU {html.escape(sku)}</p>
+            <h1>{html.escape(name)}</h1>
+            <p class="price">${price}</p>
+            <h2>Product information</h2>
+            <p>{html.escape(str(product.get("description") or description))}</p>
+            <p><a href="/#products">Browse the wholesale catalog</a></p>
+          </section>
+        </article>
+        <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
+      </main>
+    </div>
+    <script src="/src/app.js?v=20260703-seo1"></script>
+  </body>
+</html>
+"""
 
 
 def split_color_text(value):
@@ -764,6 +966,9 @@ def build_order_workbook_from_data(order):
     wb = Workbook()
     ws = wb.active
     ws.title = "Order"
+    default_font = Font(name="Arial", size=11, family=2)
+    wb._fonts[0] = default_font
+    wb._named_styles["Normal"].font = default_font
     if order.get("order_no"):
         ws.append(["Order No", order.get("order_no")])
         ws.append(["Created at", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(order.get("created_at") or now())))])
@@ -786,7 +991,7 @@ def build_order_workbook_from_data(order):
     header_fill = PatternFill("solid", fgColor="1F1A17")
     for cell in ws[header_row]:
         cell.fill = header_fill
-        cell.font = Font(color="FFFFFF", bold=True)
+        cell.font = Font(name="Arial", family=2, color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     for index, item in enumerate(order.get("items") or [], 1):
@@ -856,14 +1061,17 @@ def build_order_workbook_from_data(order):
         ws[f"I{row}"].number_format = "$0.00"
         ws[f"J{row}"].number_format = "0.000"
     for row in range(summary_start, ws.max_row + 1):
-        ws[f"H{row}"].font = Font(bold=True)
-        ws[f"I{row}"].font = Font(bold=True)
+        ws[f"H{row}"].font = Font(name="Arial", family=2, bold=True)
+        ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
         if ws[f"H{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
             ws[f"I{row}"].number_format = "$0.00"
     for row in ws.iter_rows():
         for cell in row:
             font = copy(cell.font)
             font.name = "Arial"
+            font.family = 2
+            font.scheme = None
+            font.charset = None
             cell.font = font
     ws.freeze_panes = f"A{header_row + 1}"
 
@@ -886,6 +1094,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if urlparse(self.path).path.startswith("/api/"):
+            self.send_header("X-Robots-Tag", "noindex, nofollow")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; "
@@ -901,6 +1111,15 @@ class CatalogHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/robots.txt":
+            return self.handle_robots()
+        if parsed.path == "/sitemap.xml":
+            return self.handle_sitemap()
+        if parsed.path == "/llms.txt":
+            return self.handle_llms()
+        if parsed.path.startswith("/product/"):
+            product_id = unquote(parsed.path.removeprefix("/product/")).rstrip("/")
+            return self.handle_product_page(product_id)
         if parsed.path == "/api/products":
             return self.handle_products(parse_qs(parsed.query))
         if parsed.path == "/api/me":
@@ -1026,6 +1245,160 @@ class CatalogHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def handle_robots(self):
+        content = (
+            "User-agent: *\n"
+            "Allow: /\n"
+            "Disallow: /api/\n"
+            f"Sitemap: {PUBLIC_BASE_URL}/sitemap.xml\n"
+            f"Host: {urlparse(PUBLIC_BASE_URL).netloc}\n"
+        )
+        return text_response(self, 200, content, "text/plain; charset=utf-8")
+
+    def handle_sitemap(self):
+        with connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, name, image, updated_at
+                FROM products
+                WHERE published = 1 AND archived_at = 0
+                ORDER BY updated_at DESC, id
+                """
+            ).fetchall()
+        entries = [
+            (
+                f"  <url><loc>{html.escape(PUBLIC_BASE_URL + '/')}</loc>"
+                "<changefreq>daily</changefreq><priority>1.0</priority></url>"
+            )
+        ]
+        for row in rows:
+            updated_at = int(row["updated_at"] or 0)
+            lastmod = time.strftime("%Y-%m-%d", time.gmtime(updated_at)) if updated_at else ""
+            image = absolute_media_url(row["image"])
+            parts = [
+                "  <url>",
+                f"<loc>{html.escape(product_page_url(row['id']))}</loc>",
+                f"<lastmod>{lastmod}</lastmod>" if lastmod else "",
+                "<changefreq>weekly</changefreq><priority>0.8</priority>",
+            ]
+            if image:
+                parts.extend(
+                    [
+                        "<image:image>",
+                        f"<image:loc>{html.escape(image)}</image:loc>",
+                        f"<image:title>{html.escape(str(row['name']))}</image:title>",
+                        "</image:image>",
+                    ]
+                )
+            parts.append("</url>")
+            entries.append("".join(parts))
+        sitemap = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+            'xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n'
+            + "\n".join(entries)
+            + "\n</urlset>\n"
+        )
+        return text_response(self, 200, sitemap, "application/xml; charset=utf-8")
+
+    def handle_llms(self):
+        with connect() as conn:
+            product_count = conn.execute(
+                "SELECT COUNT(*) FROM products WHERE published = 1 AND archived_at = 0"
+            ).fetchone()[0]
+            brands = conn.execute(
+                """
+                SELECT brand, COUNT(*) AS count
+                FROM products
+                WHERE published = 1 AND archived_at = 0 AND brand <> ''
+                GROUP BY brand
+                ORDER BY count DESC, brand
+                LIMIT 30
+                """
+            ).fetchall()
+            categories = conn.execute(
+                """
+                SELECT category, COUNT(*) AS count
+                FROM products
+                WHERE published = 1 AND archived_at = 0 AND category <> ''
+                GROUP BY category
+                ORDER BY count DESC, category
+                """
+            ).fetchall()
+        brand_text = ", ".join(f"{row['brand']} ({row['count']})" for row in brands)
+        category_text = ", ".join(f"{row['category']} ({row['count']})" for row in categories)
+        content = f"""# {SEO_SITE_NAME}
+
+> A B2B wholesale cosmetics catalog for browsing products, choosing shades and quantities, and creating an order number for supplier confirmation.
+
+## Canonical website
+
+- Website: {PUBLIC_BASE_URL}/
+- Product sitemap: {PUBLIC_BASE_URL}/sitemap.xml
+- Published products: {product_count}
+
+## Catalog
+
+- Major brands: {brand_text}
+- Categories: {category_text}
+- Product pages include SKU, brand, category, USD price, shade choices, product information and images.
+
+## Ordering
+
+1. Add products, shades and quantities to the cart.
+2. Select Europe or United States for shipping.
+3. Create an order number.
+4. Send the order number through WhatsApp for availability confirmation.
+5. The supplier provides an Alibaba payment link after details are agreed.
+
+## Important product information
+
+- Availability is confirmed manually after an order number is created.
+- Sephora app scanning is not guaranteed.
+- Products are replica products and are not sold as authentic branded goods.
+- Goods are normally sent to the forwarder within three working days after payment.
+- Forwarder delivery is usually 12 to 15 days.
+
+## Contact workflow
+
+Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the supplier conversation through the WhatsApp action provided by the website.
+"""
+        return text_response(self, 200, content, "text/plain; charset=utf-8")
+
+    def handle_product_page(self, product_id):
+        if not product_id:
+            return self.send_error(404)
+        with connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM products
+                WHERE id = ? AND published = 1 AND archived_at = 0
+                """,
+                (product_id,),
+            ).fetchone()
+            if not row:
+                return self.send_error(404)
+            product = product_from_row(row)
+            related_rows = conn.execute(
+                """
+                SELECT * FROM products
+                WHERE id <> ? AND published = 1 AND archived_at = 0
+                    AND (brand = ? OR category = ?)
+                ORDER BY CASE WHEN brand = ? THEN 0 ELSE 1 END,
+                         sort_order ASC, name ASC
+                LIMIT 8
+                """,
+                (product_id, product["brand"], product["category"], product["brand"]),
+            ).fetchall()
+        page = build_product_page(product, [product_from_row(item) for item in related_rows])
+        return text_response(
+            self,
+            200,
+            page,
+            "text/html; charset=utf-8",
+            cache_control="public, max-age=300",
+        )
 
     def handle_products(self, query):
         include_drafts = query.get("include_drafts", ["0"])[0] == "1" and bool(self.current_user())

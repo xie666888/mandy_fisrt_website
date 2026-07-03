@@ -1,13 +1,29 @@
 (function () {
   const CART_KEY = "luxe-trade-cart";
   const ADMIN_PAGE_SIZE = 80;
+  const SITE_NAME = "BeBeauty Wholesale Catalog";
+  const HOME_TITLE = "Wholesale Cosmetics & Beauty Products Catalog | BeBeauty";
+  const HOME_DESCRIPTION = "Browse wholesale cosmetics and beauty products by brand, category, SKU, shade and price. Create an order number for supplier confirmation.";
+
+  function productIdFromPath() {
+    const match = location.pathname.match(/^\/product\/(.+?)\/?$/);
+    if (!match) return "";
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return "";
+    }
+  }
+
+  const initialProductId = productIdFromPath();
+  const initialParams = new URLSearchParams(location.search);
 
   const state = {
-    view: location.hash === "#admin" ? "admin" : location.hash === "#cart" ? "cart" : "catalog",
-    detailId: null,
-    search: "",
-    brand: "All",
-    category: "All",
+    view: initialProductId ? "detail" : location.hash === "#admin" ? "admin" : location.hash === "#cart" ? "cart" : "catalog",
+    detailId: initialProductId || null,
+    search: initialParams.get("q") || "",
+    brand: initialParams.get("brand") || "All",
+    category: initialParams.get("category") || "All",
     sort: "featured",
     editingId: null,
     selectedColor: "",
@@ -34,11 +50,11 @@
   let apiOnline = false;
 
   const PRODUCT_QA = [
-    ["Are these items authentic makeup?", "No, these items copied items."],
-    ["If all products are scannable on the application Sephora?", "Sorry, since these items are copied items, and we do not have Sephora system here, we do not assure all these items are scannable on the application Sephora."],
-    ["How does the order process work?", "1. Please add the items, colors and qty you need into the cart, then press Create order & Contact Supplier. 2. After all details are agreed by both of us, we will create order and send you payment link on Alibaba. WE DEAL ON ALIBABA. 3. We send goods to you after you paid on Alibaba."],
-    ["How long is the delivery?", "Usually, goods will be sent out to forwarder within 3 working days after payment received, then you can get the parcel within 12-15 days after the forwarder sent out."],
-    ["What should we do if the goods broken during transportation?", "We can send the replacement with your next order or refund the cost of the broken items to you."],
+    ["Are these products authentic?", "No. These are replica products and are not sold as authentic branded goods."],
+    ["Can every product be scanned in the Sephora app?", "No. Sephora app scanning is not guaranteed for these products."],
+    ["How does the order process work?", "Add products, shades and quantities to the cart, create an order number, then confirm availability and the Alibaba payment link through WhatsApp."],
+    ["How long does delivery take?", "Goods are normally sent to the forwarder within three working days after payment. Forwarder delivery is usually 12 to 15 days."],
+    ["What happens if goods are damaged during transportation?", "A replacement can be sent with the next order or the damaged item cost can be refunded after confirmation."],
   ];
 
   function readJSON(key, fallback) {
@@ -420,12 +436,78 @@
     return `<div class="bottle" data-brand="${escapeHTML(product.brand)}"></div>`;
   }
 
-  function openDetail(id) {
+  function productPath(id) {
+    return `/product/${encodeURIComponent(id)}`;
+  }
+
+  function setMeta(selector, attribute, value) {
+    let element = document.head.querySelector(selector);
+    if (!element) {
+      element = document.createElement("meta");
+      const propertyMatch = selector.match(/^meta\[property="([^"]+)"\]$/);
+      const nameMatch = selector.match(/^meta\[name="([^"]+)"\]$/);
+      if (propertyMatch) element.setAttribute("property", propertyMatch[1]);
+      if (nameMatch) element.setAttribute("name", nameMatch[1]);
+      document.head.appendChild(element);
+    }
+    element.setAttribute(attribute, value);
+  }
+
+  function setCanonical(url) {
+    let canonical = document.head.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.appendChild(canonical);
+    }
+    canonical.href = url;
+  }
+
+  function metadataDescription(product) {
+    const identity = `${product.name} by ${product.brand}, SKU ${product.sku}.`;
+    const description = String(product.description || "").replace(/\s+/g, " ").trim();
+    return `${identity} ${description} Wholesale beauty catalog with shade selection and order-number confirmation.`
+      .slice(0, 158)
+      .replace(/[\s,.;]+$/, "") + ".";
+  }
+
+  function updatePageMetadata() {
+    const product = state.view === "detail" ? products.find((item) => item.id === state.detailId) : null;
+    const privateView = state.view === "admin" || state.view === "cart";
+    const title = product ? `${product.name} Wholesale | ${product.brand} | BeBeauty` : HOME_TITLE;
+    const description = product ? metadataDescription(product) : HOME_DESCRIPTION;
+    const canonical = product ? new URL(productPath(product.id), location.origin).href : `${location.origin}/`;
+    document.title = title;
+    setCanonical(canonical);
+    setMeta('meta[name="description"]', "content", description);
+    setMeta('meta[name="robots"]', "content", privateView ? "noindex,nofollow" : "index,follow,max-image-preview:large,max-snippet:-1");
+    setMeta('meta[property="og:site_name"]', "content", SITE_NAME);
+    setMeta('meta[property="og:type"]', "content", product ? "product" : "website");
+    setMeta('meta[property="og:title"]', "content", title);
+    setMeta('meta[property="og:description"]', "content", description);
+    setMeta('meta[property="og:url"]', "content", canonical);
+    if (product?.image) {
+      setMeta('meta[property="og:image"]', "content", new URL(product.image.replace(/^\.\//, "/"), location.origin).href);
+    }
+  }
+
+  function updateCatalogUrl() {
+    const params = new URLSearchParams();
+    if (state.brand !== "All") params.set("brand", state.brand);
+    if (state.category !== "All") params.set("category", state.category);
+    const query = params.toString();
+    history.pushState({ view: "catalog" }, "", query ? `/?${query}` : "/");
+  }
+
+  function openDetail(id, pushHistory = true) {
     state.view = "detail";
     state.detailId = id;
     state.qty = 1;
     state.selectedColor = "";
     state.selectedImage = "";
+    if (pushHistory && location.pathname !== productPath(id)) {
+      history.pushState({ view: "detail", id }, "", productPath(id));
+    }
     render();
     window.setTimeout(() => {
       document.documentElement.scrollTop = 0;
@@ -465,6 +547,7 @@
       layout(`<main class="content"><div class="empty">Loading catalog...</div></main>`);
       return;
     }
+    updatePageMetadata();
     if (state.view === "detail") return renderDetail();
     if (state.view === "cart") return renderCart();
     if (state.view === "admin") return renderAdmin();
@@ -534,13 +617,13 @@
     const options = shadeOptions(p);
     return `
       <article class="card">
-        <button class="product-image" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p)}</button>
+        <a class="product-image" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p)}</a>
         <div class="card-body">
           <div class="meta">
             <button class="tag tag-button" data-filter-brand="${escapeHTML(p.brand)}" title="Show all ${escapeHTML(p.brand)} products">${escapeHTML(p.brand)}</button>
             <button class="tag tag-button" data-filter-category="${escapeHTML(p.category)}" title="Show all ${escapeHTML(p.category)} products">${escapeHTML(p.category)}</button>
           </div>
-          <h3>${escapeHTML(p.name)}</h3>
+          <h3><a class="product-title-link" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}">${escapeHTML(p.name)}</a></h3>
           <p class="desc">${escapeHTML(p.description)}</p>
           <div class="card-signals"><span>${options.length} shade${options.length === 1 ? "" : "s"}</span><span>SKU ${escapeHTML(p.sku)}</span></div>
           ${cartStatusForProduct(p.id)}
@@ -1005,7 +1088,7 @@
   }
 
   document.addEventListener("click", async (event) => {
-    const target = event.target.closest("button, .brand, [data-quick-backdrop]");
+    const target = event.target.closest("button, a[data-detail], .brand, [data-quick-backdrop]");
     if (!target) return;
     if (target.dataset.quickBackdrop !== undefined && event.target === target) {
       state.quickAddId = null;
@@ -1017,6 +1100,7 @@
       if (key === "search" || key === "all") state.search = "";
       if (key === "brand" || key === "all") state.brand = "All";
       if (key === "category" || key === "all") state.category = "All";
+      updateCatalogUrl();
       renderCatalog();
       return;
     }
@@ -1026,6 +1110,7 @@
       state.search = "";
       state.brand = target.dataset.filterBrand;
       state.category = "All";
+      updateCatalogUrl();
       render();
       window.setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0);
       return;
@@ -1036,6 +1121,7 @@
       state.search = "";
       state.brand = "All";
       state.category = target.dataset.filterCategory;
+      updateCatalogUrl();
       render();
       window.setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0);
       return;
@@ -1043,7 +1129,13 @@
     if (target.dataset.view) {
       state.view = target.dataset.view;
       state.detailId = null;
+      history.pushState(
+        { view: state.view },
+        "",
+        state.view === "catalog" ? "/" : `/#${state.view}`
+      );
       render();
+      return;
     }
     if (target.dataset.adminPage) {
       const totalPages = Math.max(1, Math.ceil(filteredAdminProducts().length / ADMIN_PAGE_SIZE));
@@ -1056,6 +1148,7 @@
     }
     if (target.dataset.scroll) document.getElementById(target.dataset.scroll)?.scrollIntoView({ behavior: "smooth" });
     if (target.dataset.detail) {
+      event.preventDefault();
       openDetail(target.dataset.detail);
       return;
     }
@@ -1192,10 +1285,12 @@
     const el = event.target;
     if (el.dataset.action === "brand") {
       state.brand = el.value;
+      updateCatalogUrl();
       renderCatalog();
     }
     if (el.dataset.action === "category") {
       state.category = el.value;
+      updateCatalogUrl();
       renderCatalog();
     }
     if (el.dataset.action === "sort") {
@@ -1365,6 +1460,17 @@
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
+  });
+
+  window.addEventListener("popstate", () => {
+    const productId = productIdFromPath();
+    const params = new URLSearchParams(location.search);
+    state.view = productId ? "detail" : location.hash === "#admin" ? "admin" : location.hash === "#cart" ? "cart" : "catalog";
+    state.detailId = productId || null;
+    state.brand = params.get("brand") || "All";
+    state.category = params.get("category") || "All";
+    state.search = params.get("q") || "";
+    render();
   });
 
   loadServerState().then(render);

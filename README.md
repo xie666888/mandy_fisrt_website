@@ -53,6 +53,7 @@ The server supports these environment variables:
 | `PORT` | HTTP port |
 | `TRUST_PROXY` | Trust reverse-proxy client IP headers when set to `1` |
 | `HTTPS` | Add the Secure flag to session cookies when set to `1` |
+| `PUBLIC_BASE_URL` | Canonical public origin used by product pages, sitemap, robots, and GEO content |
 
 ## Private data
 

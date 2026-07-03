@@ -6,6 +6,8 @@ troubleshooting this project.
 ## 1. Source Of Truth And Release Topology
 
 - Tencent Cloud (`43.166.137.208`) is the only production primary.
+- The canonical production URL is `https://bebeauty.top/`; both
+  `bebeauty.top` and `www.bebeauty.top` resolve to Tencent Cloud.
 - GitHub (`xie666888/mandy_fisrt_website`) stores source code and operational
   documentation only.
 - Alibaba Cloud (`101.132.36.115`) is the warm standby. Never edit products,
@@ -17,9 +19,10 @@ troubleshooting this project.
   been explicitly declared.
 - Never synchronize a live SQLite database file with plain `rsync`. Create a
   consistent SQLite backup first, then transfer and atomically install it.
-- DNS must point both `dadenjoyslife.online` and `www.dadenjoyslife.online` to
-  Tencent before enabling `luxe-replication.timer`. Until that cutover, users
-  can still write orders to Alibaba and automatic replacement would lose them.
+- Before enabling `luxe-replication.timer`, all active catalog/order entry
+  points must lead to Tencent. A legacy domain may remain on Alibaba only when
+  it redirects catalog traffic to `https://bebeauty.top/`; otherwise Alibaba
+  could receive orders that the next replication would replace.
 
 ## 2. Secrets And Production Data
 
@@ -46,10 +49,17 @@ Both cloud servers use the same application layout:
 | Environment file | `/etc/luxe-catalog.env` |
 | Application service | `luxe-catalog.service` |
 | Nginx configuration | `/etc/nginx/conf.d/luxe-catalog.conf` |
+| TLS certificate chain | `/etc/nginx/ssl/bebeauty.top/fullchain.crt` |
+| TLS private key | `/etc/nginx/ssl/bebeauty.top/private.key` |
 | Daily backups | `/var/backups/luxe-catalog` |
 
 The Python application listens only on `127.0.0.1:4173`. Nginx is the public
 entry point. Do not expose port `4173`.
+
+The current `bebeauty.top` certificate covers the root and `www` names and
+expires on 2026-10-01. Renew and install its replacement before expiry. Never
+commit or synchronize the certificate private key through Git or application
+rsync. Keep `HTTPS=1` so admin session cookies retain the `Secure` flag.
 
 ## 4. Local And Server SSH
 
@@ -110,7 +120,9 @@ easier.
 ## 7. Storefront Behaviour
 
 - Use Arial for storefront UI, admin UI, and every cell in generated order
-  Excel files.
+  Excel files. Order workbooks must also set the Normal/default font to Arial
+  and remove theme font schemes; otherwise Chinese Excel can display Songti
+  even when populated cells report Arial.
 - Color/shade options split only on `/`. Spaces and hyphens are literal content:
   `1/2/3` becomes three choices; `1-2-3` and `1 2 3` remain one choice.
 - Size, gross weight, and net weight are product information, not selectable
@@ -144,7 +156,29 @@ easier.
 - Do not lower original image resolution as a performance shortcut. Use browser
   sizing, lazy loading, thumbnails in admin, and caching.
 
-## 9. Safe Change Workflow
+## 9. SEO And GEO Invariants
+
+- The canonical public origin is `https://bebeauty.top`.
+- Every published product has a stable, crawlable
+  `/product/<percent-encoded-product-id>` URL. Keep product IDs stable.
+- `/sitemap.xml` is generated from published, non-archived SQLite rows and must
+  contain the home page plus every public product.
+- `/robots.txt` must reference the canonical sitemap and disallow `/api/`.
+- `/llms.txt` provides concise, factual catalog and ordering context for
+  generative search systems. Keep it aligned with the visible Q/A and actual
+  business process.
+- Product pages must retain server-rendered title, description, canonical,
+  Open Graph tags, Product schema, Breadcrumb schema, FAQ schema, semantic H1,
+  image alt text, and related product links.
+- Product cards use real anchor URLs even though JavaScript enhances navigation.
+- API responses retain `X-Robots-Tag: noindex, nofollow`.
+- Never add fake reviews, ratings, inventory claims, authenticity claims,
+  delivery guarantees, company addresses, or certifications to structured
+  data. GEO content must remain specific, consistent, and verifiable.
+- Archived or unpublished products must return `404` from their product URL and
+  must not appear in the sitemap.
+
+## 10. Safe Change Workflow
 
 1. Read this guide and inspect `git status` before editing.
 2. Work only on source/configuration files needed for the change.
@@ -173,7 +207,7 @@ absolute source and destination paths first. Code sync may delete obsolete code
 only inside `/opt/luxe-catalog`; data sync may delete obsolete uploaded images
 only inside `/var/lib/luxe-catalog/uploads`.
 
-## 10. Required Verification
+## 11. Required Verification
 
 For each release, check at minimum:
 
@@ -186,10 +220,15 @@ For each release, check at minimum:
 - Admin login/session works
 - Create/update/archive and multi-image upload/delete work independently
 - Existing order Excel downloads successfully and every populated cell uses
-  Arial
+  Arial; the workbook Normal style is Arial and `styles.xml` contains no theme
+  font scheme
+- `/robots.txt`, `/sitemap.xml`, `/llms.txt`, and a sample `/product/...` URL
+  return HTTP `200`
+- Sitemap URL count equals published product count plus one home URL
+- Product HTML contains canonical, Product JSON-LD and semantic product content
 - Tencent and Alibaba product/order counts match after replication
 
-## 11. Backup And Recovery
+## 12. Backup And Recovery
 
 - Tencent creates a complete daily backup and retains the newest three.
 - Backups include application source, uploads, a consistent SQLite snapshot,
