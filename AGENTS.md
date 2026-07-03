@@ -132,6 +132,9 @@ easier.
   control.
 - Product images and related-product links must open the detail view at the top
   where selection and add-to-cart controls are visible.
+- Product and media paths rendered by JavaScript must be root-relative
+  (`/src/...`) or absolute. Never render stored `./src/...` paths unchanged on
+  nested routes such as `/product/<id>`.
 - Detail pages recommend other products from the same brand and category.
 - Brand/category labels on product cards are clickable filters.
 - Product cards have Quick Add, fixed image bounds, and preserve image aspect

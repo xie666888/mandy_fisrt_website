@@ -220,9 +220,15 @@
     return parsed.length ? parsed : cleanColorList(fallback);
   }
 
+  function normalizeAssetUrl(value) {
+    const url = String(value || "").trim().replace(/\\/g, "/");
+    if (!url || /^(?:https?:|data:|blob:)/i.test(url) || url.startsWith("/")) return url;
+    return `/${url.replace(/^\.\//, "").replace(/^\/+/, "")}`;
+  }
+
   function normalizeProduct(product) {
-    const images = cleanImageList(product.images || []);
-    const image = String(product.image || images[0] || "").trim();
+    const images = cleanImageList(product.images || []).map(normalizeAssetUrl);
+    const image = normalizeAssetUrl(product.image || images[0] || "");
     if (image && !images.includes(image)) images.unshift(image);
     return {
       ...product,
