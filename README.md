@@ -13,6 +13,11 @@ The public repository intentionally excludes production databases, product
 catalog data, images, spreadsheets, backups, credentials, and server-specific
 deployment configuration.
 
+Read `AGENTS.md` before making changes. It documents the production invariants,
+safe release workflow, and the Tencent-primary/Alibaba-standby replication
+topology. The scripts under `deployment/replication/` contain no credentials;
+private keys and environment files remain on their respective servers.
+
 ## Requirements
 
 - Python 3.10+

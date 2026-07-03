@@ -755,6 +755,8 @@ def load_order_record(order_no):
 
 
 def build_order_workbook_from_data(order):
+    from copy import copy
+
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -858,6 +860,11 @@ def build_order_workbook_from_data(order):
         ws[f"I{row}"].font = Font(bold=True)
         if ws[f"H{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
             ws[f"I{row}"].number_format = "$0.00"
+    for row in ws.iter_rows():
+        for cell in row:
+            font = copy(cell.font)
+            font.name = "Arial"
+            cell.font = font
     ws.freeze_panes = f"A{header_row + 1}"
 
     output = io.BytesIO()
@@ -922,12 +929,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
             return self.handle_order_excel()
         if parsed.path == "/api/products":
             return self.require_admin(self.handle_product_create)
-        if parsed.path == "/api/products/bulk":
-            return self.require_admin(self.handle_products_bulk)
         if parsed.path == "/api/uploads/images":
             return self.require_admin(self.handle_image_upload)
-        if parsed.path == "/api/products/reset":
-            return self.require_admin(self.handle_products_reset)
         return json_response(self, 404, {"error": "Not found"})
 
     def do_PUT(self):
@@ -1064,22 +1067,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
             return json_response(self, 404, {"error": "Product not found"})
         return json_response(self, 200, {"ok": True, "archived": True})
 
-    def handle_products_bulk(self):
-        try:
-            data = read_json(self)
-            products = data.get("products") or []
-            if not isinstance(products, list):
-                raise ValueError("products must be a list")
-            with connect() as conn:
-                conn.execute("DELETE FROM products")
-                assign_unique_product_ids_batch(conn, products)
-                for product in products:
-                    upsert_product(conn, product)
-                conn.commit()
-            return json_response(self, 200, {"ok": True, "count": len(products)})
-        except ValueError as exc:
-            return json_response(self, 400, {"error": str(exc)})
-
     def handle_image_upload(self):
         try:
             content_type = self.headers.get("Content-Type", "")
@@ -1095,13 +1082,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
         except Exception:
             logger.exception("Image upload failed")
             return json_response(self, 500, {"error": "Image upload failed. Please try again."})
-
-    def handle_products_reset(self):
-        with connect() as conn:
-            conn.execute("DELETE FROM products")
-            seed_products(conn)
-            conn.commit()
-        return json_response(self, 200, {"ok": True})
 
     def handle_settings_get(self):
         with connect() as conn:
