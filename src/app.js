@@ -332,9 +332,9 @@
     if (kg <= 2) return 43.8;
     if (kg <= 3) return 49.8;
     if (kg <= 4) return 59.5;
-    if (kg <= 5) return 71.6;
-    if (kg <= 15) return kg * 10.3;
-    return kg * 9.85;
+    if (kg <= 5) return kg * 11.9;
+    if (kg <= 15) return kg * 11.3;
+    return kg * 10.5;
   }
 
   function cartTotals() {
@@ -594,7 +594,7 @@
       <main class="content">
         <div class="section-title compact-title"><div><h1>Wholesale Beauty Products</h1><p>${list.length} matching items</p></div></div>
         <div class="grid">
-          ${list.map(productCard).join("")}
+          ${list.map((product, index) => productCard(product, index)).join("")}
         </div>
       </main>`);
   }
@@ -619,11 +619,11 @@
       </aside>`;
   }
 
-  function productCard(p) {
+  function productCard(p, index = 0) {
     const options = shadeOptions(p);
     return `
       <article class="card">
-        <a class="product-image" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p)}</a>
+        <a class="product-image" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p, index < 5 ? "eager" : "lazy")}</a>
         <div class="card-body">
           <div class="meta">
             <button class="tag tag-button" data-filter-brand="${escapeHTML(p.brand)}" title="Show all ${escapeHTML(p.brand)} products">${escapeHTML(p.brand)}</button>

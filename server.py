@@ -387,7 +387,7 @@ def build_product_page(product, related_products):
     <meta property="og:url" content="{html.escape(canonical, quote=True)}">
     {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/src/styles.css?v=20260703-imgfix1">
+    <link rel="stylesheet" href="/src/styles.css?v=20260704-shipping1">
     <script type="application/ld+json">{seo_json(product_schema)}</script>
     <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
     <script type="application/ld+json">{seo_json(faq_schema)}</script>
@@ -410,7 +410,7 @@ def build_product_page(product, related_products):
         <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
       </main>
     </div>
-    <script src="/src/app.js?v=20260703-imgfix1"></script>
+    <script src="/src/app.js?v=20260704-shipping1"></script>
   </body>
 </html>
 """
@@ -705,10 +705,10 @@ def shipping_cost(country, weight_kg):
     if weight <= 4:
         return 59.5
     if weight <= 5:
-        return 71.6
+        return weight * 11.9
     if weight <= 15:
-        return weight * 10.3
-    return weight * 9.85
+        return weight * 11.3
+    return weight * 10.5
 
 
 def local_image_path(image_url):
