@@ -739,7 +739,6 @@
             </label>
             <div class="total-box">
               <div><span>Product total</span><strong>${money(totals.productTotal)}</strong></div>
-              <div><span>Product weight</span><strong>${weight(totals.totalWeight)}</strong></div>
               <div><span>Shipping weight</span><strong>${weight(totals.shippingWeight)}</strong></div>
               <div><span>SHIPPING COST</span><strong>${money(totals.shipping)}</strong></div>
               <div><span>TOTAL</span><strong>${money(totals.total)}</strong></div>
