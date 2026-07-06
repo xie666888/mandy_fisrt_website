@@ -6,6 +6,7 @@ import html
 import io
 import json
 import logging
+import math
 import mimetypes
 import os
 import secrets
@@ -387,7 +388,7 @@ def build_product_page(product, related_products):
     <meta property="og:url" content="{html.escape(canonical, quote=True)}">
     {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/src/styles.css?v=20260704-shipping1">
+    <link rel="stylesheet" href="/src/styles.css?v=20260706-shipping2">
     <script type="application/ld+json">{seo_json(product_schema)}</script>
     <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
     <script type="application/ld+json">{seo_json(faq_schema)}</script>
@@ -410,7 +411,7 @@ def build_product_page(product, related_products):
         <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
       </main>
     </div>
-    <script src="/src/app.js?v=20260704-shipping1"></script>
+    <script src="/src/app.js?v=20260706-shipping2"></script>
   </body>
 </html>
 """
@@ -612,6 +613,7 @@ def init_db():
                 items_json TEXT NOT NULL,
                 product_total REAL NOT NULL DEFAULT 0,
                 total_weight REAL NOT NULL DEFAULT 0,
+                shipping_weight REAL NOT NULL DEFAULT 0,
                 shipping REAL NOT NULL DEFAULT 0,
                 total REAL NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL
@@ -664,6 +666,9 @@ def init_db():
             conn.execute("ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
         if "archived_at" not in columns:
             conn.execute("ALTER TABLE products ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0")
+        order_columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)").fetchall()}
+        if "shipping_weight" not in order_columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN shipping_weight REAL NOT NULL DEFAULT 0")
         seed_products(conn)
         conn.commit()
 
@@ -675,8 +680,15 @@ def parse_cookie(header):
     return jar
 
 
-def shipping_cost(country, weight_kg):
-    weight = max(0, float(weight_kg or 0))
+def billable_shipping_weight(country, product_weight_kg):
+    product_weight = max(0, float(product_weight_kg or 0))
+    if country != "Europe" or product_weight <= 6:
+        return product_weight
+    return math.ceil((product_weight + 2 - 1e-12) * 2) / 2
+
+
+def shipping_cost(country, billable_weight_kg):
+    weight = max(0, float(billable_weight_kg or 0))
     if country == "United States":
         if weight <= 0.7:
             return 48.8
@@ -695,20 +707,20 @@ def shipping_cost(country, weight_kg):
         return weight * 17.3
 
     if weight <= 0.7:
-        return 29.8
-    if weight <= 1.2:
+        return 31.2
+    if weight <= 1.5:
         return 35.2
     if weight <= 2:
         return 43.8
     if weight <= 3:
-        return 49.8
+        return 52.3
     if weight <= 4:
-        return 59.5
+        return 61.8
     if weight <= 5:
-        return weight * 11.9
-    if weight <= 15:
-        return weight * 11.3
-    return weight * 10.5
+        return 72.3
+    if weight <= 6:
+        return 81.4
+    return weight * 10.8
 
 
 def local_image_path(image_url):
@@ -890,13 +902,15 @@ def prepare_order_data(cart_items, country):
             }
         )
 
-    shipping = round(shipping_cost(country, total_weight), 2)
+    shipping_weight = billable_shipping_weight(country, total_weight)
+    shipping = round(shipping_cost(country, shipping_weight), 2)
     total = round(product_total + shipping, 2)
     return {
         "country": country,
         "items": lines,
         "product_total": round(product_total, 2),
         "total_weight": round(total_weight, 3),
+        "shipping_weight": round(shipping_weight, 3),
         "shipping": shipping,
         "total": total,
     }
@@ -917,9 +931,9 @@ def create_order_record(cart_items, country):
                     """
                     INSERT INTO orders (
                         order_no, country, items_json, product_total, total_weight,
-                        shipping, total, created_at
+                        shipping_weight, shipping, total, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         order_no,
@@ -927,6 +941,7 @@ def create_order_record(cart_items, country):
                         json.dumps(order["items"], ensure_ascii=False),
                         order["product_total"],
                         order["total_weight"],
+                        order["shipping_weight"],
                         order["shipping"],
                         order["total"],
                         created_at,
@@ -1033,7 +1048,11 @@ def build_order_workbook_from_data(order):
     summary_rows = [
         ("Shipping country", order.get("country") or "Europe"),
         ("Total product cost", float(order.get("product_total") or 0)),
-        ("Total weight(kg)", float(order.get("total_weight") or 0)),
+        ("Product weight (kg)", float(order.get("total_weight") or 0)),
+        (
+            "Shipping weight (kg)",
+            float(order.get("shipping_weight") or order.get("total_weight") or 0),
+        ),
         ("SHIPPING COST", float(order.get("shipping") or 0)),
         ("TOTAL", float(order.get("total") or 0)),
     ]
@@ -1506,6 +1525,7 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
                     "country": order["country"],
                     "productTotal": order["product_total"],
                     "totalWeight": order["total_weight"],
+                    "shippingWeight": order["shipping_weight"],
                     "shipping": order["shipping"],
                     "total": order["total"],
                 },

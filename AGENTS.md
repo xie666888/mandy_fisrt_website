@@ -130,11 +130,15 @@ easier.
 - Add-to-cart must keep the customer on the current page and show a clear cart
   animation/confirmation. Navigation to the cart happens only from the cart
   control.
-- Europe shipping is calculated from total order weight in kilograms:
-  up to 0.7 kg is $29.80; up to 1.2 kg is $35.20; up to 2 kg is $43.80;
-  up to 3 kg is $49.80; up to 4 kg is $59.50; over 4 kg through 5 kg is
-  $11.90/kg; over 5 kg through 15 kg is $11.30/kg; over 15 kg is $10.50/kg.
-  Keep the browser estimate and server-side order calculation identical.
+- Europe shipping uses product weight directly through 6 kg: up to 0.7 kg is
+  $31.20; over 0.7 through 1.5 kg is $35.20; over 1.5 through 2 kg is $43.80;
+  over 2 through 3 kg is $52.30; over 3 through 4 kg is $61.80; over 4
+  through 5 kg is $72.30; over 5 through 6 kg is $81.40.
+- Only when Europe product weight is over 6 kg, add 2 kg packaging and round
+  the result up to the next 0.5 kg, then charge $10.80/kg. For example,
+  7.23 kg becomes 9.5 kg and 7.68 kg becomes 10 kg. United States rates do
+  not use this Europe packaging rule. Keep the browser estimate, server-side
+  order calculation, stored order weights, and Excel summary identical.
 - Product images and related-product links must open the detail view at the top
   where selection and add-to-cart controls are visible.
 - Product and media paths rendered by JavaScript must be root-relative

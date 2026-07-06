@@ -315,8 +315,14 @@
     });
   }
 
-  function shippingCost(country, totalWeight) {
-    const kg = Math.max(0, Number(totalWeight || 0));
+  function billableShippingWeight(country, productWeight) {
+    const kg = Math.max(0, Number(productWeight || 0));
+    if (country !== "Europe" || kg <= 6) return kg;
+    return Math.ceil((kg + 2 - Number.EPSILON) * 2) / 2;
+  }
+
+  function shippingCost(country, billableWeight) {
+    const kg = Math.max(0, Number(billableWeight || 0));
     if (country === "United States") {
       if (kg <= 0.7) return 48.8;
       if (kg <= 1.2) return 65.4;
@@ -327,22 +333,23 @@
       if (kg <= 15) return kg * 19.3;
       return kg * 17.3;
     }
-    if (kg <= 0.7) return 29.8;
-    if (kg <= 1.2) return 35.2;
+    if (kg <= 0.7) return 31.2;
+    if (kg <= 1.5) return 35.2;
     if (kg <= 2) return 43.8;
-    if (kg <= 3) return 49.8;
-    if (kg <= 4) return 59.5;
-    if (kg <= 5) return kg * 11.9;
-    if (kg <= 15) return kg * 11.3;
-    return kg * 10.5;
+    if (kg <= 3) return 52.3;
+    if (kg <= 4) return 61.8;
+    if (kg <= 5) return 72.3;
+    if (kg <= 6) return 81.4;
+    return kg * 10.8;
   }
 
   function cartTotals() {
     const lines = cartLines();
     const productTotal = lines.reduce((sum, item) => sum + item.qty * item.price, 0);
     const totalWeight = lines.reduce((sum, item) => sum + item.qty * Number(item.weight || 0), 0);
-    const shipping = lines.length ? shippingCost(state.shippingCountry, totalWeight) : 0;
-    return { lines, productTotal, totalWeight, shipping, total: productTotal + shipping };
+    const shippingWeight = lines.length ? billableShippingWeight(state.shippingCountry, totalWeight) : 0;
+    const shipping = lines.length ? shippingCost(state.shippingCountry, shippingWeight) : 0;
+    return { lines, productTotal, totalWeight, shippingWeight, shipping, total: productTotal + shipping };
   }
 
   function shadeOptions(product) {
@@ -732,7 +739,8 @@
             </label>
             <div class="total-box">
               <div><span>Product total</span><strong>${money(totals.productTotal)}</strong></div>
-              <div><span>Total weight</span><strong>${weight(totals.totalWeight)}</strong></div>
+              <div><span>Product weight</span><strong>${weight(totals.totalWeight)}</strong></div>
+              <div><span>Shipping weight</span><strong>${weight(totals.shippingWeight)}</strong></div>
               <div><span>SHIPPING COST</span><strong>${money(totals.shipping)}</strong></div>
               <div><span>TOTAL</span><strong>${money(totals.total)}</strong></div>
             </div>
