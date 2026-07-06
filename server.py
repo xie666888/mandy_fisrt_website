@@ -1000,7 +1000,6 @@ def build_order_workbook_from_data(order):
         "Unit Price",
         "QTY",
         "Extended price",
-        "Weight(kg)",
     ]
     ws.append(headers)
     header_row = ws.max_row
@@ -1013,9 +1012,7 @@ def build_order_workbook_from_data(order):
     for index, item in enumerate(order.get("items") or [], 1):
         unit_price = float(item.get("price") or 0)
         qty = max(1, int(float(item.get("qty") or 1)))
-        unit_weight = float(item.get("weight") or 0)
         extended = float(item.get("extended") or unit_price * qty)
-        line_weight = float(item.get("line_weight") or unit_weight * qty)
         row_number = ws.max_row + 1
         ws.append(
             [
@@ -1028,7 +1025,6 @@ def build_order_workbook_from_data(order):
                 unit_price,
                 qty,
                 extended,
-                line_weight,
             ]
         )
         ws.row_dimensions[row_number].height = 58
@@ -1048,7 +1044,6 @@ def build_order_workbook_from_data(order):
     summary_rows = [
         ("Shipping country", order.get("country") or "Europe"),
         ("Total product cost", float(order.get("product_total") or 0)),
-        ("Product weight (kg)", float(order.get("total_weight") or 0)),
         (
             "Shipping weight (kg)",
             float(order.get("shipping_weight") or order.get("total_weight") or 0),
@@ -1057,7 +1052,7 @@ def build_order_workbook_from_data(order):
         ("TOTAL", float(order.get("total") or 0)),
     ]
     for label, value in summary_rows:
-        ws.append(["", "", "", "", "", "", "", label, value, ""])
+        ws.append(["", "", "", "", "", "", "", label, value])
 
     widths = {
         "A": 8,
@@ -1069,7 +1064,6 @@ def build_order_workbook_from_data(order):
         "G": 12,
         "H": 10,
         "I": 16,
-        "J": 14,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
@@ -1079,7 +1073,6 @@ def build_order_workbook_from_data(order):
     for row in range(header_row + 1, ws.max_row + 1):
         ws[f"G{row}"].number_format = "$0.00"
         ws[f"I{row}"].number_format = "$0.00"
-        ws[f"J{row}"].number_format = "0.000"
     for row in range(summary_start, ws.max_row + 1):
         ws[f"H{row}"].font = Font(name="Arial", family=2, bold=True)
         ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
@@ -1524,7 +1517,6 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
                     "orderNo": order["order_no"],
                     "country": order["country"],
                     "productTotal": order["product_total"],
-                    "totalWeight": order["total_weight"],
                     "shippingWeight": order["shipping_weight"],
                     "shipping": order["shipping"],
                     "total": order["total"],

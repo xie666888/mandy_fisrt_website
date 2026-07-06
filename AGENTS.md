@@ -139,9 +139,10 @@ easier.
   7.23 kg becomes 9.5 kg and 7.68 kg becomes 10 kg. United States rates do
   not use this Europe packaging rule. Keep the browser estimate, server-side
   order calculation, stored order weights, and Excel summary identical.
-- The customer cart summary shows only Shipping weight, never Product weight.
-  Product weight remains stored internally and may remain in the admin order
-  Excel for reconciliation.
+- Customer and admin-visible order output shows only Shipping weight, never
+  Product weight. Order Excel files must not include a product Weight column
+  or Product weight summary. Product weight remains stored internally only for
+  calculating Shipping weight.
 - Product images and related-product links must open the detail view at the top
   where selection and add-to-cart controls are visible.
 - Product and media paths rendered by JavaScript must be root-relative
