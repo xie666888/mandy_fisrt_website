@@ -1058,18 +1058,18 @@ def build_order_workbook_from_data(order):
                 information_text,
             ]
         )
-        ws.row_dimensions[row_number].height = 96
-        text_height = max(len(item["shade_order"]), 1) * 18 + 20
-        ws.row_dimensions[row_number].height = max(96, text_height)
+        min_row_height = 56
+        text_height = max(len(item["shade_order"]), 1) * 15 + 18
+        ws.row_dimensions[row_number].height = max(min_row_height, text_height)
         image_path = local_image_path(item["image"])
         if image_path:
             try:
                 image = XLImage(str(image_path))
-                target_width = 250
+                target_width = 83
                 if image.width:
                     image.height = int(image.height * (target_width / image.width))
                     image.width = target_width
-                    ws.row_dimensions[row_number].height = max(96, image.height * 0.75 + 8, text_height)
+                    ws.row_dimensions[row_number].height = max(min_row_height, image.height * 0.75 + 8, text_height)
                 ws.add_image(image, f"D{row_number}")
             except Exception:
                 pass
@@ -1094,7 +1094,7 @@ def build_order_workbook_from_data(order):
         "A": 8,
         "B": 18,
         "C": 46,
-        "D": 35,
+        "D": 12,
         "E": 18,
         "F": 12,
         "G": 10,
