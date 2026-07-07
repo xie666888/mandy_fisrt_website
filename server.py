@@ -999,6 +999,7 @@ def build_order_workbook_from_data(order):
         "Unit Price",
         "QTY",
         "Extended price",
+        "Informations",
     ]
     ws.append(headers)
     header_row = ws.max_row
@@ -1008,25 +1009,59 @@ def build_order_workbook_from_data(order):
         cell.font = Font(name="Arial", family=2, color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    for index, item in enumerate(order.get("items") or [], 1):
+    grouped_items = []
+    grouped_index = {}
+    for item in order.get("items") or []:
         unit_price = float(item.get("price") or 0)
         qty = max(1, int(float(item.get("qty") or 1)))
         extended = float(item.get("extended") or unit_price * qty)
+        brand = str(item.get("brand") or "")
+        name = str(item.get("name") or "")
+        image_url = str(item.get("image") or "")
+        shade = str(item.get("color") or "Default").strip() or "Default"
+        key = (brand, name, round(unit_price, 6), image_url)
+        group = grouped_index.get(key)
+        if not group:
+            group = {
+                "brand": brand,
+                "name": name,
+                "image": image_url,
+                "price": unit_price,
+                "qty": 0,
+                "extended": 0.0,
+                "shade_order": [],
+                "shade_qty": {},
+            }
+            grouped_index[key] = group
+            grouped_items.append(group)
+        group["qty"] += qty
+        group["extended"] += extended
+        if shade not in group["shade_qty"]:
+            group["shade_order"].append(shade)
+            group["shade_qty"][shade] = 0
+        group["shade_qty"][shade] += qty
+
+    for index, item in enumerate(grouped_items, 1):
+        shade_text = "\n".join(item["shade_order"])
+        information_text = "\n".join(f"{shade} * {item['shade_qty'][shade]} PCS" for shade in item["shade_order"])
         row_number = ws.max_row + 1
         ws.append(
             [
                 index,
-                item.get("brand") or "",
-                item.get("name") or "",
+                item["brand"],
+                item["name"],
                 "",
-                item.get("color") or "Default",
-                unit_price,
-                qty,
-                extended,
+                shade_text,
+                item["price"],
+                item["qty"],
+                item["extended"],
+                information_text,
             ]
         )
         ws.row_dimensions[row_number].height = 96
-        image_path = local_image_path(item.get("image"))
+        text_height = max(len(item["shade_order"]), 1) * 18 + 20
+        ws.row_dimensions[row_number].height = max(96, text_height)
+        image_path = local_image_path(item["image"])
         if image_path:
             try:
                 image = XLImage(str(image_path))
@@ -1034,7 +1069,7 @@ def build_order_workbook_from_data(order):
                 if image.width:
                     image.height = int(image.height * (target_width / image.width))
                     image.width = target_width
-                    ws.row_dimensions[row_number].height = max(96, image.height * 0.75 + 8)
+                    ws.row_dimensions[row_number].height = max(96, image.height * 0.75 + 8, text_height)
                 ws.add_image(image, f"D{row_number}")
             except Exception:
                 pass
@@ -1053,7 +1088,7 @@ def build_order_workbook_from_data(order):
         ("TOTAL", float(order.get("total") or 0)),
     ]
     for label, value in summary_rows:
-        ws.append(["", "", "", "", "", "", label, value])
+        ws.append(["", "", "", "", "", "", "", label, value])
 
     widths = {
         "A": 8,
@@ -1064,6 +1099,7 @@ def build_order_workbook_from_data(order):
         "F": 12,
         "G": 10,
         "H": 16,
+        "I": 24,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
@@ -1074,10 +1110,10 @@ def build_order_workbook_from_data(order):
         ws[f"F{row}"].number_format = "$0.00"
         ws[f"H{row}"].number_format = "$0.00"
     for row in range(summary_start, ws.max_row + 1):
-        ws[f"G{row}"].font = Font(name="Arial", family=2, bold=True)
         ws[f"H{row}"].font = Font(name="Arial", family=2, bold=True)
-        if ws[f"G{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
-            ws[f"H{row}"].number_format = "$0.00"
+        ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
+        if ws[f"H{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
+            ws[f"I{row}"].number_format = "$0.00"
     for row in ws.iter_rows():
         for cell in row:
             font = copy(cell.font)

@@ -146,6 +146,10 @@ easier.
 - Order Excel files must not include an SKU column. Product images in order
   Excel should render in the Picture column at 250px width while preserving the
   source image aspect ratio.
+- Order Excel item rows are grouped by Brand + Item Name + Unit Price +
+  Picture. Shade/Type contains one shade per line, QTY is the grouped total,
+  and the Informations column contains one line per shade in the format
+  `Shade * QTY PCS`.
 - Product images and related-product links must open the detail view at the top
   where selection and add-to-cart controls are visible.
 - Product and media paths rendered by JavaScript must be root-relative
