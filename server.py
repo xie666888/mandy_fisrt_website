@@ -992,7 +992,6 @@ def build_order_workbook_from_data(order):
 
     headers = [
         "NO",
-        "SKU",
         "Brand",
         "Item Name",
         "Picture",
@@ -1017,7 +1016,6 @@ def build_order_workbook_from_data(order):
         ws.append(
             [
                 index,
-                item.get("sku") or "",
                 item.get("brand") or "",
                 item.get("name") or "",
                 "",
@@ -1027,20 +1025,23 @@ def build_order_workbook_from_data(order):
                 extended,
             ]
         )
-        ws.row_dimensions[row_number].height = 58
+        ws.row_dimensions[row_number].height = 96
         image_path = local_image_path(item.get("image"))
         if image_path:
             try:
                 image = XLImage(str(image_path))
-                max_width, max_height = 72, 58
-                ratio = min(max_width / image.width, max_height / image.height, 1)
-                image.width = int(image.width * ratio)
-                image.height = int(image.height * ratio)
-                ws.add_image(image, f"E{row_number}")
+                target_width = 250
+                if image.width:
+                    image.height = int(image.height * (target_width / image.width))
+                    image.width = target_width
+                    ws.row_dimensions[row_number].height = max(96, image.height * 0.75 + 8)
+                ws.add_image(image, f"D{row_number}")
             except Exception:
                 pass
 
-    summary_start = ws.max_row + 2
+    item_end_row = ws.max_row
+    ws.append([])
+    summary_start = ws.max_row + 1
     summary_rows = [
         ("Shipping country", order.get("country") or "Europe"),
         ("Total product cost", float(order.get("product_total") or 0)),
@@ -1052,32 +1053,31 @@ def build_order_workbook_from_data(order):
         ("TOTAL", float(order.get("total") or 0)),
     ]
     for label, value in summary_rows:
-        ws.append(["", "", "", "", "", "", "", label, value])
+        ws.append(["", "", "", "", "", "", label, value])
 
     widths = {
         "A": 8,
         "B": 18,
-        "C": 18,
-        "D": 42,
-        "E": 14,
-        "F": 18,
-        "G": 12,
-        "H": 10,
-        "I": 16,
+        "C": 46,
+        "D": 35,
+        "E": 18,
+        "F": 12,
+        "G": 10,
+        "H": 16,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
     for row in ws.iter_rows(min_row=header_row + 1, max_row=ws.max_row):
         for cell in row:
             cell.alignment = Alignment(vertical="center", wrap_text=True)
-    for row in range(header_row + 1, ws.max_row + 1):
-        ws[f"G{row}"].number_format = "$0.00"
-        ws[f"I{row}"].number_format = "$0.00"
+    for row in range(header_row + 1, item_end_row + 1):
+        ws[f"F{row}"].number_format = "$0.00"
+        ws[f"H{row}"].number_format = "$0.00"
     for row in range(summary_start, ws.max_row + 1):
+        ws[f"G{row}"].font = Font(name="Arial", family=2, bold=True)
         ws[f"H{row}"].font = Font(name="Arial", family=2, bold=True)
-        ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
-        if ws[f"H{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
-            ws[f"I{row}"].number_format = "$0.00"
+        if ws[f"G{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
+            ws[f"H{row}"].number_format = "$0.00"
     for row in ws.iter_rows():
         for cell in row:
             font = copy(cell.font)

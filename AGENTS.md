@@ -143,6 +143,9 @@ easier.
   Product weight. Order Excel files must not include a product Weight column
   or Product weight summary. Product weight remains stored internally only for
   calculating Shipping weight.
+- Order Excel files must not include an SKU column. Product images in order
+  Excel should render in the Picture column at 250px width while preserving the
+  source image aspect ratio.
 - Product images and related-product links must open the detail view at the top
   where selection and add-to-cart controls are visible.
 - Product and media paths rendered by JavaScript must be root-relative
