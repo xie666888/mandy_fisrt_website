@@ -144,7 +144,7 @@ easier.
   or Product weight summary. Product weight remains stored internally only for
   calculating Shipping weight.
 - Order Excel files must not include an SKU column. Product images in order
-  Excel should render in the Picture column at about 83px width while
+  Excel should render in the Picture column at about 95px width while
   preserving the source image aspect ratio, keeping roughly 6-7 order rows
   visible per screen in common Excel views.
 - Order Excel item rows are grouped by Brand + Item Name + Unit Price +

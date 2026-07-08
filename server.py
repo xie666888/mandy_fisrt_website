@@ -1065,7 +1065,7 @@ def build_order_workbook_from_data(order):
         if image_path:
             try:
                 image = XLImage(str(image_path))
-                target_width = 83
+                target_width = 95
                 if image.width:
                     image.height = int(image.height * (target_width / image.width))
                     image.width = target_width
