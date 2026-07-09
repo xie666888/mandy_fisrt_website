@@ -982,6 +982,9 @@ def build_order_workbook_from_data(order):
     wb = Workbook()
     ws = wb.active
     ws.title = "Order"
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
+    wb.calculation.calcMode = "auto"
     default_font = Font(name="Arial", size=11, family=2)
     wb._fonts[0] = default_font
     wb._named_styles["Normal"].font = default_font
@@ -1001,6 +1004,7 @@ def build_order_workbook_from_data(order):
         "Product weight(kg)",
         "Extended price",
         "Informations",
+        "Unit weight helper",
     ]
     ws.append(headers)
     header_row = ws.max_row
@@ -1031,6 +1035,7 @@ def build_order_workbook_from_data(order):
                 "price": unit_price,
                 "qty": 0,
                 "line_weight": 0.0,
+                "unit_weight": 0.0,
                 "extended": 0.0,
                 "shade_order": [],
                 "shade_qty": {},
@@ -1039,6 +1044,8 @@ def build_order_workbook_from_data(order):
             grouped_items.append(group)
         group["qty"] += qty
         group["line_weight"] += line_weight
+        if qty:
+            group["unit_weight"] = line_weight / qty
         group["extended"] += extended
         if shade not in group["shade_qty"]:
             group["shade_order"].append(shade)
@@ -1058,9 +1065,10 @@ def build_order_workbook_from_data(order):
                 shade_text,
                 item["price"],
                 item["qty"],
-                round(item["line_weight"], 3),
-                item["extended"],
+                f"=G{row_number}*K{row_number}",
+                f"=F{row_number}*G{row_number}",
                 information_text,
+                round(item["line_weight"] / item["qty"], 6) if item["qty"] else 0,
             ]
         )
         min_row_height = 56
@@ -1070,7 +1078,7 @@ def build_order_workbook_from_data(order):
         if image_path:
             try:
                 image = XLImage(str(image_path))
-                target_width = 95
+                target_width = 119
                 if image.width:
                     image.height = int(image.height * (target_width / image.width))
                     image.width = target_width
@@ -1080,17 +1088,35 @@ def build_order_workbook_from_data(order):
                 pass
 
     item_end_row = ws.max_row
+    formula_end_row = max(item_end_row, header_row + 500)
     ws.append([])
     summary_start = ws.max_row + 1
+    detail_start_row = header_row + 1
+    product_total_formula = f"=SUM(I{detail_start_row}:I{formula_end_row})"
+    product_weight_formula = f"SUM(H{detail_start_row}:H{formula_end_row})"
+    country_cell = f"J{summary_start}"
+    shipping_weight_formula = (
+        f'=IF({country_cell}<>"Europe",{product_weight_formula},'
+        f'IF({product_weight_formula}<=6,{product_weight_formula},'
+        f'CEILING({product_weight_formula}+2,0.5)))'
+    )
+    shipping_cost_formula = (
+        f'=IF({country_cell}="United States",'
+        f'IF(J{summary_start + 2}<=0.7,48.8,IF(J{summary_start + 2}<=1.2,65.4,'
+        f'IF(J{summary_start + 2}<=2,79.8,IF(J{summary_start + 2}<=3,84.2,'
+        f'IF(J{summary_start + 2}<=4,94.2,IF(J{summary_start + 2}<=5,J{summary_start + 2}*21.3,'
+        f'IF(J{summary_start + 2}<=15,J{summary_start + 2}*19.3,J{summary_start + 2}*17.3))))))),'
+        f'IF(J{summary_start + 2}<=0.7,31.2,IF(J{summary_start + 2}<=1.5,35.2,'
+        f'IF(J{summary_start + 2}<=2,43.8,IF(J{summary_start + 2}<=3,52.3,'
+        f'IF(J{summary_start + 2}<=4,61.8,IF(J{summary_start + 2}<=5,72.3,'
+        f'IF(J{summary_start + 2}<=6,81.4,J{summary_start + 2}*10.8))))))))'
+    )
     summary_rows = [
         ("Shipping country", order.get("country") or "Europe"),
-        ("Total product cost", float(order.get("product_total") or 0)),
-        (
-            "Shipping weight (kg)",
-            float(order.get("shipping_weight") or order.get("total_weight") or 0),
-        ),
-        ("SHIPPING COST", float(order.get("shipping") or 0)),
-        ("TOTAL", float(order.get("total") or 0)),
+        ("Total product cost", product_total_formula),
+        ("Shipping weight (kg)", shipping_weight_formula),
+        ("SHIPPING COST", shipping_cost_formula),
+        ("TOTAL", f"=J{summary_start + 1}+J{summary_start + 3}"),
     ]
     for label, value in summary_rows:
         ws.append(["", "", "", "", "", "", "", "", label, value])
@@ -1106,6 +1132,7 @@ def build_order_workbook_from_data(order):
         "H": 18,
         "I": 16,
         "J": 24,
+        "K": 14,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
@@ -1116,11 +1143,15 @@ def build_order_workbook_from_data(order):
         ws[f"F{row}"].number_format = "$0.00"
         ws[f"H{row}"].number_format = "0.000"
         ws[f"I{row}"].number_format = "$0.00"
+        ws[f"K{row}"].number_format = "0.000000"
+    ws.column_dimensions["K"].hidden = True
     for row in range(summary_start, ws.max_row + 1):
         ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
         ws[f"J{row}"].font = Font(name="Arial", family=2, bold=True)
         if ws[f"I{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
             ws[f"J{row}"].number_format = "$0.00"
+        if ws[f"I{row}"].value == "Shipping weight (kg)":
+            ws[f"J{row}"].number_format = "0.000"
     for row in ws.iter_rows():
         for cell in row:
             font = copy(cell.font)

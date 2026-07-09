@@ -144,13 +144,17 @@ easier.
   column, but the Excel summary area must not include a Product weight summary.
   Product weight remains stored internally for calculating Shipping weight.
 - Order Excel files must not include an SKU column. Product images in order
-  Excel should render in the Picture column at about 95px width while
+  Excel should render in the Picture column at about 119px width while
   preserving the source image aspect ratio, keeping roughly 6-7 order rows
   visible per screen in common Excel views.
 - Order Excel item rows are grouped by Brand + Item Name + Unit Price +
   Picture. Shade/Type contains one shade per line, QTY is the grouped total,
   and the Informations column contains one line per shade in the format
   `Shade * QTY PCS`.
+- Order Excel summary values must be formula-driven, not static values, so
+  manual item-row insertions/deletions can recalculate product totals, shipping
+  weight, shipping cost and total. Generated item rows use formulas for Product
+  weight(kg) and Extended price, with a hidden Unit weight helper column.
 - Product images and related-product links must open the detail view at the top
   where selection and add-to-cart controls are visible.
 - Product and media paths rendered by JavaScript must be root-relative
