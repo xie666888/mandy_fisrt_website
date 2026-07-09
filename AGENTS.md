@@ -139,10 +139,10 @@ easier.
   7.23 kg becomes 9.5 kg and 7.68 kg becomes 10 kg. United States rates do
   not use this Europe packaging rule. Keep the browser estimate, server-side
   order calculation, stored order weights, and Excel summary identical.
-- Customer and admin-visible order output shows only Shipping weight, never
-  Product weight. Order Excel files must not include a product Weight column
-  or Product weight summary. Product weight remains stored internally only for
-  calculating Shipping weight.
+- Customer and admin-visible order summaries show only Shipping weight, never
+  Product weight. Order Excel item rows include a Product weight(kg) detail
+  column, but the Excel summary area must not include a Product weight summary.
+  Product weight remains stored internally for calculating Shipping weight.
 - Order Excel files must not include an SKU column. Product images in order
   Excel should render in the Picture column at about 95px width while
   preserving the source image aspect ratio, keeping roughly 6-7 order rows

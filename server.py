@@ -998,6 +998,7 @@ def build_order_workbook_from_data(order):
         "Shade/Type",
         "Unit Price",
         "QTY",
+        "Product weight(kg)",
         "Extended price",
         "Informations",
     ]
@@ -1015,6 +1016,7 @@ def build_order_workbook_from_data(order):
         unit_price = float(item.get("price") or 0)
         qty = max(1, int(float(item.get("qty") or 1)))
         extended = float(item.get("extended") or unit_price * qty)
+        line_weight = float(item.get("line_weight") or float(item.get("weight") or 0) * qty)
         brand = str(item.get("brand") or "")
         name = str(item.get("name") or "")
         image_url = str(item.get("image") or "")
@@ -1028,6 +1030,7 @@ def build_order_workbook_from_data(order):
                 "image": image_url,
                 "price": unit_price,
                 "qty": 0,
+                "line_weight": 0.0,
                 "extended": 0.0,
                 "shade_order": [],
                 "shade_qty": {},
@@ -1035,6 +1038,7 @@ def build_order_workbook_from_data(order):
             grouped_index[key] = group
             grouped_items.append(group)
         group["qty"] += qty
+        group["line_weight"] += line_weight
         group["extended"] += extended
         if shade not in group["shade_qty"]:
             group["shade_order"].append(shade)
@@ -1054,6 +1058,7 @@ def build_order_workbook_from_data(order):
                 shade_text,
                 item["price"],
                 item["qty"],
+                round(item["line_weight"], 3),
                 item["extended"],
                 information_text,
             ]
@@ -1088,7 +1093,7 @@ def build_order_workbook_from_data(order):
         ("TOTAL", float(order.get("total") or 0)),
     ]
     for label, value in summary_rows:
-        ws.append(["", "", "", "", "", "", "", label, value])
+        ws.append(["", "", "", "", "", "", "", "", label, value])
 
     widths = {
         "A": 8,
@@ -1098,8 +1103,9 @@ def build_order_workbook_from_data(order):
         "E": 18,
         "F": 12,
         "G": 10,
-        "H": 16,
-        "I": 24,
+        "H": 18,
+        "I": 16,
+        "J": 24,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
@@ -1108,12 +1114,13 @@ def build_order_workbook_from_data(order):
             cell.alignment = Alignment(vertical="center", wrap_text=True)
     for row in range(header_row + 1, item_end_row + 1):
         ws[f"F{row}"].number_format = "$0.00"
-        ws[f"H{row}"].number_format = "$0.00"
+        ws[f"H{row}"].number_format = "0.000"
+        ws[f"I{row}"].number_format = "$0.00"
     for row in range(summary_start, ws.max_row + 1):
-        ws[f"H{row}"].font = Font(name="Arial", family=2, bold=True)
         ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
-        if ws[f"H{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
-            ws[f"I{row}"].number_format = "$0.00"
+        ws[f"J{row}"].font = Font(name="Arial", family=2, bold=True)
+        if ws[f"I{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
+            ws[f"J{row}"].number_format = "$0.00"
     for row in ws.iter_rows():
         for cell in row:
             font = copy(cell.font)
