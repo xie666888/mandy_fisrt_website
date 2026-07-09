@@ -125,6 +125,10 @@ easier.
   even when populated cells report Arial.
 - Color/shade options split only on `/`. Spaces and hyphens are literal content:
   `1/2/3` becomes three choices; `1-2-3` and `1 2 3` remain one choice.
+- The admin `Colors / shade options` field is authoritative when saving a
+  product. `Colors:` text inside Product information is only a legacy/display
+  fallback when stored colors are empty, and must never override explicit admin
+  color input.
 - Size, gross weight, and net weight are product information, not selectable
   shade/type options.
 - Add-to-cart must keep the customer on the current page and show a clear cart

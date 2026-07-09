@@ -411,7 +411,7 @@ def build_product_page(product, related_products):
         <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
       </main>
     </div>
-    <script src="/src/app.js?v=20260706-shipping3"></script>
+    <script src="/src/app.js?v=20260709-colors1"></script>
   </body>
 </html>
 """
@@ -1090,11 +1090,16 @@ def build_order_workbook_from_data(order):
     item_end_row = ws.max_row
     formula_end_row = max(item_end_row, header_row + 500)
     ws.append([])
-    summary_start = ws.max_row + 1
+    summary_start = item_end_row + 2
+    country_row = summary_start
+    product_total_row = summary_start + 1
+    shipping_weight_row = summary_start + 2
+    shipping_cost_row = summary_start + 3
     detail_start_row = header_row + 1
     product_total_formula = f"=SUM(I{detail_start_row}:I{formula_end_row})"
     product_weight_formula = f"SUM(H{detail_start_row}:H{formula_end_row})"
-    country_cell = f"J{summary_start}"
+    country_cell = f"J{country_row}"
+    shipping_weight_cell = f"J{shipping_weight_row}"
     shipping_weight_formula = (
         f'=IF({country_cell}<>"Europe",{product_weight_formula},'
         f'IF({product_weight_formula}<=6,{product_weight_formula},'
@@ -1102,21 +1107,21 @@ def build_order_workbook_from_data(order):
     )
     shipping_cost_formula = (
         f'=IF({country_cell}="United States",'
-        f'IF(J{summary_start + 2}<=0.7,48.8,IF(J{summary_start + 2}<=1.2,65.4,'
-        f'IF(J{summary_start + 2}<=2,79.8,IF(J{summary_start + 2}<=3,84.2,'
-        f'IF(J{summary_start + 2}<=4,94.2,IF(J{summary_start + 2}<=5,J{summary_start + 2}*21.3,'
-        f'IF(J{summary_start + 2}<=15,J{summary_start + 2}*19.3,J{summary_start + 2}*17.3))))))),'
-        f'IF(J{summary_start + 2}<=0.7,31.2,IF(J{summary_start + 2}<=1.5,35.2,'
-        f'IF(J{summary_start + 2}<=2,43.8,IF(J{summary_start + 2}<=3,52.3,'
-        f'IF(J{summary_start + 2}<=4,61.8,IF(J{summary_start + 2}<=5,72.3,'
-        f'IF(J{summary_start + 2}<=6,81.4,J{summary_start + 2}*10.8))))))))'
+        f'IF({shipping_weight_cell}<=0.7,48.8,IF({shipping_weight_cell}<=1.2,65.4,'
+        f'IF({shipping_weight_cell}<=2,79.8,IF({shipping_weight_cell}<=3,84.2,'
+        f'IF({shipping_weight_cell}<=4,94.2,IF({shipping_weight_cell}<=5,{shipping_weight_cell}*21.3,'
+        f'IF({shipping_weight_cell}<=15,{shipping_weight_cell}*19.3,{shipping_weight_cell}*17.3))))))),'
+        f'IF({shipping_weight_cell}<=0.7,31.2,IF({shipping_weight_cell}<=1.5,35.2,'
+        f'IF({shipping_weight_cell}<=2,43.8,IF({shipping_weight_cell}<=3,52.3,'
+        f'IF({shipping_weight_cell}<=4,61.8,IF({shipping_weight_cell}<=5,72.3,'
+        f'IF({shipping_weight_cell}<=6,81.4,{shipping_weight_cell}*10.8))))))))'
     )
     summary_rows = [
         ("Shipping country", order.get("country") or "Europe"),
         ("Total product cost", product_total_formula),
         ("Shipping weight (kg)", shipping_weight_formula),
         ("SHIPPING COST", shipping_cost_formula),
-        ("TOTAL", f"=J{summary_start + 1}+J{summary_start + 3}"),
+        ("TOTAL", f"=J{product_total_row}+J{shipping_cost_row}"),
     ]
     for label, value in summary_rows:
         ws.append(["", "", "", "", "", "", "", "", label, value])

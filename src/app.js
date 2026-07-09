@@ -211,13 +211,15 @@
   }
 
   function extractColorOptions(info, fallback = []) {
+    const fallbackColors = cleanColorList(fallback);
+    if (fallbackColors.length) return fallbackColors;
     const text = String(info || "");
     const match = text.match(/colou?rs?\s*[:：]\s*(.*)/i);
-    if (!match) return cleanColorList(fallback);
+    if (!match) return [];
     const raw = match[1]
       .split(/\s+(?:size|gross\s*weight|gross|net\s*(?:weight|wet|wight)|weight)\s*[:：]?/i)[0];
     const parsed = cleanColorList(raw.split("/"));
-    return parsed.length ? parsed : cleanColorList(fallback);
+    return parsed;
   }
 
   function normalizeAssetUrl(value) {
@@ -1416,7 +1418,7 @@
     }
     whatsappNumber = String(data.whatsapp || whatsappNumber).replace(/[^\d]/g, "") || whatsappNumber;
     const colorOptions = cleanColorList(splitColorText(data.colors));
-    const product = normalizeProduct({
+    const product = {
       id: data.sku.trim(),
       sku: data.sku.trim(),
       brand: data.brand.trim(),
@@ -1427,10 +1429,10 @@
       weight: positiveDecimal(data.weight),
       description: data.description.trim(),
       colors: colorOptions,
-      image: data.image.trim(),
-      images: cleanImageList(String(data.images || "").split(/\n|,/)),
+      image: normalizeAssetUrl(String(data.image || "").trim()),
+      images: cleanImageList(String(data.images || "").split(/\n|,/)).map(normalizeAssetUrl),
       published: data.published === "on",
-    });
+    };
     if (!product.sku || !product.name) return;
     const feedback = form.querySelector("[data-save-feedback]");
     const submitButton = form.querySelector('button[type="submit"]');
