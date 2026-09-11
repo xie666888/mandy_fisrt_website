@@ -388,7 +388,7 @@ def build_product_page(product, related_products):
     <meta property="og:url" content="{html.escape(canonical, quote=True)}">
     {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/src/styles.css?v=20260911-merchandising">
+    <link rel="stylesheet" href="/src/styles.css?v=20260911-round-button">
     <script type="application/ld+json">{seo_json(product_schema)}</script>
     <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
     <script type="application/ld+json">{seo_json(faq_schema)}</script>
