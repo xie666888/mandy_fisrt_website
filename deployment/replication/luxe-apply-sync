@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly INCOMING="/var/lib/luxe-replica/incoming"
+readonly APP_STAGE="${INCOMING}/app"
+readonly UPLOAD_STAGE="${INCOMING}/uploads"
+readonly DB_STAGE="${INCOMING}/catalog.sqlite3"
+readonly APP_TARGET="/opt/luxe-catalog"
+readonly UPLOAD_TARGET="/var/lib/luxe-catalog/uploads"
+readonly DB_TARGET="/var/lib/luxe-catalog/catalog.sqlite3"
+readonly BACKUP_DIR="/var/backups/luxe-replica"
+readonly LOCK_FILE="/run/lock/luxe-replica-apply.lock"
+
+[[ "$INCOMING" == "/var/lib/luxe-replica/incoming" ]] || exit 1
+[[ "$APP_TARGET" == "/opt/luxe-catalog" ]] || exit 1
+[[ "$UPLOAD_TARGET" == "/var/lib/luxe-catalog/uploads" ]] || exit 1
+[[ -f "$APP_STAGE/server.py" ]] || { echo "Staged server.py is missing." >&2; exit 1; }
+[[ -f "$DB_STAGE" ]] || { echo "Staged SQLite snapshot is missing." >&2; exit 1; }
+[[ -d "$UPLOAD_STAGE" ]] || { echo "Staged uploads are missing." >&2; exit 1; }
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "Replica apply is already running."; exit 0; }
+
+python3 - "$DB_STAGE" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+if integrity != "ok":
+    raise SystemExit(f"Staged SQLite snapshot failed integrity check: {integrity}")
+connection.close()
+PY
+
+install -d -o root -g root -m 0700 "$BACKUP_DIR"
+if [[ -f "$DB_TARGET" ]]; then
+    backup="${BACKUP_DIR}/catalog-before-sync-$(date +%Y%m%d-%H%M%S).sqlite3"
+    python3 - "$DB_TARGET" "$backup" <<'PY'
+import sqlite3
+import sys
+
+source = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+target = sqlite3.connect(sys.argv[2])
+with target:
+    source.backup(target)
+target.close()
+source.close()
+PY
+    chmod 0600 "$backup"
+    mapfile -t old_backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f \
+        -name 'catalog-before-sync-*.sqlite3' -printf '%T@ %p\n' \
+        | sort -nr | tail -n +4 | cut -d' ' -f2-)
+    for old_backup in "${old_backups[@]}"; do
+        [[ "$old_backup" == "$BACKUP_DIR/"* ]] || exit 1
+        rm -f -- "$old_backup"
+    done
+fi
+
+restart_on_error() {
+    systemctl start luxe-catalog.service || true
+}
+trap restart_on_error ERR
+
+systemctl stop luxe-catalog.service
+rsync -a --delete-delay \
+    --exclude='.venv/' \
+    --exclude='.git/' \
+    --exclude='__pycache__/' \
+    --exclude='*.pyc' \
+    --exclude='catalog.sqlite3*' \
+    "$APP_STAGE/" "$APP_TARGET/"
+rsync -a --delete-delay "$UPLOAD_STAGE/" "$UPLOAD_TARGET/"
+
+if [[ -f "$APP_TARGET/requirements.txt" ]]; then
+    "$APP_TARGET/.venv/bin/pip" install --disable-pip-version-check \
+        -r "$APP_TARGET/requirements.txt" >/dev/null
+fi
+
+cp --reflink=auto "$DB_STAGE" "${DB_TARGET}.new"
+chown luxe:luxe "${DB_TARGET}.new"
+chmod 0640 "${DB_TARGET}.new"
+rm -f "${DB_TARGET}-wal" "${DB_TARGET}-shm"
+mv -f "${DB_TARGET}.new" "$DB_TARGET"
+chown -R luxe:luxe "$APP_TARGET" /var/lib/luxe-catalog
+
+systemctl start luxe-catalog.service
+for _ in {1..20}; do
+    if curl --fail --silent --max-time 3 \
+        http://127.0.0.1:4173/api/products >/dev/null; then
+        trap - ERR
+        date --iso-8601=seconds > /var/lib/luxe-replica/last-success
+        echo "Alibaba replica applied successfully."
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "Alibaba application did not pass its health check." >&2
+exit 1

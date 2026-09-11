@@ -1,13 +1,30 @@
 (function () {
   const CART_KEY = "luxe-trade-cart";
   const ADMIN_PAGE_SIZE = 80;
+  const SITE_NAME = "BeBeauty Wholesale Catalog";
+  const HOME_TITLE = "Wholesale Cosmetics & Beauty Products Catalog | BeBeauty";
+  const HOME_DESCRIPTION = "Browse wholesale cosmetics and beauty products by brand, category, SKU, shade and price. Create an order number for supplier confirmation.";
+
+  function productIdFromPath() {
+    const match = location.pathname.match(/^\/product\/(.+?)\/?$/);
+    if (!match) return "";
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return "";
+    }
+  }
+
+  const initialProductId = productIdFromPath();
+  const initialParams = new URLSearchParams(location.search);
 
   const state = {
-    view: location.hash === "#admin" ? "admin" : location.hash === "#cart" ? "cart" : "catalog",
-    detailId: null,
-    search: "",
-    brand: "All",
-    category: "All",
+    view: initialProductId ? "detail" : location.hash === "#admin" ? "admin" : location.hash === "#cart" ? "cart" : "catalog",
+    detailId: initialProductId || null,
+    search: initialParams.get("q") || "",
+    brand: initialParams.get("brand") || "All",
+    category: initialParams.get("category") || "All",
+    newArrivals: initialParams.get("new") === "1",
     sort: "featured",
     editingId: null,
     selectedColor: "",
@@ -34,11 +51,11 @@
   let apiOnline = false;
 
   const PRODUCT_QA = [
-    ["Are these items authentic makeup?", "No, these items copied items."],
-    ["If all products are scannable on the application Sephora?", "Sorry, since these items are copied items, and we do not have Sephora system here, we do not assure all these items are scannable on the application Sephora."],
-    ["How does the order process work?", "1. Please add the items, colors and qty you need into the cart, then press Create order & Contact Supplier. 2. After all details are agreed by both of us, we will create order and send you payment link on Alibaba. WE DEAL ON ALIBABA. 3. We send goods to you after you paid on Alibaba."],
-    ["How long is the delivery?", "Usually, goods will be sent out to forwarder within 3 working days after payment received, then you can get the parcel within 12-15 days after the forwarder sent out."],
-    ["What should we do if the goods broken during transportation?", "We can send the replacement with your next order or refund the cost of the broken items to you."],
+    ["Are these products authentic?", "No. These are replica products and are not sold as authentic branded goods."],
+    ["Can every product be scanned in the Sephora app?", "No. Sephora app scanning is not guaranteed for these products."],
+    ["How does the order process work?", "Add products, shades and quantities to the cart, create an order number, then confirm availability and the Alibaba payment link through WhatsApp."],
+    ["How long does delivery take?", "Goods are normally sent to the forwarder within three working days after payment. Forwarder delivery is usually 12 to 15 days."],
+    ["What happens if goods are damaged during transportation?", "A replacement can be sent with the next order or the damaged item cost can be refunded after confirmation."],
   ];
 
   function readJSON(key, fallback) {
@@ -195,18 +212,26 @@
   }
 
   function extractColorOptions(info, fallback = []) {
+    const fallbackColors = cleanColorList(fallback);
+    if (fallbackColors.length) return fallbackColors;
     const text = String(info || "");
     const match = text.match(/colou?rs?\s*[:：]\s*(.*)/i);
-    if (!match) return cleanColorList(fallback);
+    if (!match) return [];
     const raw = match[1]
       .split(/\s+(?:size|gross\s*weight|gross|net\s*(?:weight|wet|wight)|weight)\s*[:：]?/i)[0];
     const parsed = cleanColorList(raw.split("/"));
-    return parsed.length ? parsed : cleanColorList(fallback);
+    return parsed;
+  }
+
+  function normalizeAssetUrl(value) {
+    const url = String(value || "").trim().replace(/\\/g, "/");
+    if (!url || /^(?:https?:|data:|blob:)/i.test(url) || url.startsWith("/")) return url;
+    return `/${url.replace(/^\.\//, "").replace(/^\/+/, "")}`;
   }
 
   function normalizeProduct(product) {
-    const images = cleanImageList(product.images || []);
-    const image = String(product.image || images[0] || "").trim();
+    const images = cleanImageList(product.images || []).map(normalizeAssetUrl);
+    const image = normalizeAssetUrl(product.image || images[0] || "");
     if (image && !images.includes(image)) images.unshift(image);
     return {
       ...product,
@@ -266,6 +291,7 @@
   function filteredProducts() {
     const q = state.search.trim().toLowerCase();
     let list = products.filter((p) => p.published !== false);
+    if (state.newArrivals) list = list.filter((p) => p.is_new_arrival);
     if (q) list = list.filter((p) => [p.sku, p.brand, p.name, p.description, p.category].join(" ").toLowerCase().includes(q));
     if (state.brand !== "All") list = list.filter((p) => p.brand === state.brand);
     if (state.category !== "All") list = list.filter((p) => p.category === state.category);
@@ -293,8 +319,14 @@
     });
   }
 
-  function shippingCost(country, totalWeight) {
-    const kg = Math.max(0, Number(totalWeight || 0));
+  function billableShippingWeight(country, productWeight) {
+    const kg = Math.max(0, Number(productWeight || 0));
+    if (country !== "Europe" || kg <= 6) return kg;
+    return Math.ceil((kg + 2 - Number.EPSILON) * 2) / 2;
+  }
+
+  function shippingCost(country, billableWeight) {
+    const kg = Math.max(0, Number(billableWeight || 0));
     if (country === "United States") {
       if (kg <= 0.7) return 48.8;
       if (kg <= 1.2) return 65.4;
@@ -305,22 +337,23 @@
       if (kg <= 15) return kg * 19.3;
       return kg * 17.3;
     }
-    if (kg <= 0.7) return 29.8;
-    if (kg <= 1.2) return 35.2;
+    if (kg <= 0.7) return 31.2;
+    if (kg <= 1.5) return 35.2;
     if (kg <= 2) return 43.8;
-    if (kg <= 3) return 49.8;
-    if (kg <= 4) return 59.5;
-    if (kg <= 5) return 71.6;
-    if (kg <= 15) return kg * 10.3;
-    return kg * 9.85;
+    if (kg <= 3) return 52.3;
+    if (kg <= 4) return 61.8;
+    if (kg <= 5) return 72.3;
+    if (kg <= 6) return 81.4;
+    return kg * 10.8;
   }
 
   function cartTotals() {
     const lines = cartLines();
     const productTotal = lines.reduce((sum, item) => sum + item.qty * item.price, 0);
     const totalWeight = lines.reduce((sum, item) => sum + item.qty * Number(item.weight || 0), 0);
-    const shipping = lines.length ? shippingCost(state.shippingCountry, totalWeight) : 0;
-    return { lines, productTotal, totalWeight, shipping, total: productTotal + shipping };
+    const shippingWeight = lines.length ? billableShippingWeight(state.shippingCountry, totalWeight) : 0;
+    const shipping = lines.length ? shippingCost(state.shippingCountry, shippingWeight) : 0;
+    return { lines, productTotal, totalWeight, shippingWeight, shipping, total: productTotal + shipping };
   }
 
   function shadeOptions(product) {
@@ -363,6 +396,7 @@
 
   function activeFilterChips() {
     const chips = [];
+    if (state.newArrivals) chips.push({ label: "New arrivals", key: "new" });
     if (state.search.trim()) chips.push({ label: `Search: ${state.search.trim()}`, key: "search" });
     if (state.brand !== "All") chips.push({ label: `Brand: ${state.brand}`, key: "brand" });
     if (state.category !== "All") chips.push({ label: `Category: ${state.category}`, key: "category" });
@@ -420,12 +454,79 @@
     return `<div class="bottle" data-brand="${escapeHTML(product.brand)}"></div>`;
   }
 
-  function openDetail(id) {
+  function productPath(id) {
+    return `/product/${encodeURIComponent(id)}`;
+  }
+
+  function setMeta(selector, attribute, value) {
+    let element = document.head.querySelector(selector);
+    if (!element) {
+      element = document.createElement("meta");
+      const propertyMatch = selector.match(/^meta\[property="([^"]+)"\]$/);
+      const nameMatch = selector.match(/^meta\[name="([^"]+)"\]$/);
+      if (propertyMatch) element.setAttribute("property", propertyMatch[1]);
+      if (nameMatch) element.setAttribute("name", nameMatch[1]);
+      document.head.appendChild(element);
+    }
+    element.setAttribute(attribute, value);
+  }
+
+  function setCanonical(url) {
+    let canonical = document.head.querySelector('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.appendChild(canonical);
+    }
+    canonical.href = url;
+  }
+
+  function metadataDescription(product) {
+    const identity = `${product.name} by ${product.brand}, SKU ${product.sku}.`;
+    const description = String(product.description || "").replace(/\s+/g, " ").trim();
+    return `${identity} ${description} Wholesale beauty catalog with shade selection and order-number confirmation.`
+      .slice(0, 158)
+      .replace(/[\s,.;]+$/, "") + ".";
+  }
+
+  function updatePageMetadata() {
+    const product = state.view === "detail" ? products.find((item) => item.id === state.detailId) : null;
+    const privateView = state.view === "admin" || state.view === "cart";
+    const title = product ? `${product.name} Wholesale | ${product.brand} | BeBeauty` : HOME_TITLE;
+    const description = product ? metadataDescription(product) : HOME_DESCRIPTION;
+    const canonical = product ? new URL(productPath(product.id), location.origin).href : `${location.origin}/`;
+    document.title = title;
+    setCanonical(canonical);
+    setMeta('meta[name="description"]', "content", description);
+    setMeta('meta[name="robots"]', "content", privateView ? "noindex,nofollow" : "index,follow,max-image-preview:large,max-snippet:-1");
+    setMeta('meta[property="og:site_name"]', "content", SITE_NAME);
+    setMeta('meta[property="og:type"]', "content", product ? "product" : "website");
+    setMeta('meta[property="og:title"]', "content", title);
+    setMeta('meta[property="og:description"]', "content", description);
+    setMeta('meta[property="og:url"]', "content", canonical);
+    if (product?.image) {
+      setMeta('meta[property="og:image"]', "content", new URL(product.image.replace(/^\.\//, "/"), location.origin).href);
+    }
+  }
+
+  function updateCatalogUrl() {
+    const params = new URLSearchParams();
+    if (state.newArrivals) params.set("new", "1");
+    if (state.brand !== "All") params.set("brand", state.brand);
+    if (state.category !== "All") params.set("category", state.category);
+    const query = params.toString();
+    history.pushState({ view: "catalog" }, "", query ? `/?${query}` : "/");
+  }
+
+  function openDetail(id, pushHistory = true) {
     state.view = "detail";
     state.detailId = id;
     state.qty = 1;
     state.selectedColor = "";
     state.selectedImage = "";
+    if (pushHistory && location.pathname !== productPath(id)) {
+      history.pushState({ view: "detail", id }, "", productPath(id));
+    }
     render();
     window.setTimeout(() => {
       document.documentElement.scrollTop = 0;
@@ -465,6 +566,7 @@
       layout(`<main class="content"><div class="empty">Loading catalog...</div></main>`);
       return;
     }
+    updatePageMetadata();
     if (state.view === "detail") return renderDetail();
     if (state.view === "cart") return renderCart();
     if (state.view === "admin") return renderAdmin();
@@ -491,6 +593,7 @@
       <div class="catalog-sticky">
         <section class="toolbar" id="products">
           <label class="filter-field search-field"><span>Search</span><input class="search" data-action="search" placeholder="Search SKU, brand, product..." value="${escapeHTML(state.search)}">${searchSuggestions()}</label>
+          <button type="button" class="new-arrivals ${state.newArrivals ? "active" : ""}" data-new-arrivals aria-pressed="${state.newArrivals}">NEW ARRIVALS</button>
           <label class="filter-field"><span>Brand</span><select data-action="brand">${brands().map((b) => `<option ${b === state.brand ? "selected" : ""}>${escapeHTML(b)}</option>`).join("")}</select></label>
           <label class="filter-field"><span>Category</span><select data-action="category">${categories().map((c) => `<option ${c === state.category ? "selected" : ""}>${escapeHTML(c)}</option>`).join("")}</select></label>
           <label class="filter-field"><span>Sort</span><select data-action="sort">
@@ -503,9 +606,9 @@
         ${activeFilterChips()}
       </div>
       <main class="content">
-        <div class="section-title compact-title"><div><h2>Products</h2><p>${list.length} matching items</p></div></div>
+        <div class="section-title compact-title"><div><h1>Wholesale Beauty Products</h1><p>${list.length} matching items</p></div></div>
         <div class="grid">
-          ${list.map(productCard).join("")}
+          ${list.map((product, index) => productCard(product, index)).join("")}
         </div>
       </main>`);
   }
@@ -530,17 +633,17 @@
       </aside>`;
   }
 
-  function productCard(p) {
+  function productCard(p, index = 0) {
     const options = shadeOptions(p);
     return `
       <article class="card">
-        <button class="product-image" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p)}</button>
+        <a class="product-image" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p, index < 5 ? "eager" : "lazy")}</a>
         <div class="card-body">
           <div class="meta">
             <button class="tag tag-button" data-filter-brand="${escapeHTML(p.brand)}" title="Show all ${escapeHTML(p.brand)} products">${escapeHTML(p.brand)}</button>
             <button class="tag tag-button" data-filter-category="${escapeHTML(p.category)}" title="Show all ${escapeHTML(p.category)} products">${escapeHTML(p.category)}</button>
           </div>
-          <h3>${escapeHTML(p.name)}</h3>
+          <h3><a class="product-title-link" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}">${escapeHTML(p.name)}</a>${p.is_best_seller ? ' <span class="best-seller">best seller</span>' : ""}</h3>
           <p class="desc">${escapeHTML(p.description)}</p>
           <div class="card-signals"><span>${options.length} shade${options.length === 1 ? "" : "s"}</span><span>SKU ${escapeHTML(p.sku)}</span></div>
           ${cartStatusForProduct(p.id)}
@@ -643,7 +746,7 @@
             </label>
             <div class="total-box">
               <div><span>Product total</span><strong>${money(totals.productTotal)}</strong></div>
-              <div><span>Total weight</span><strong>${weight(totals.totalWeight)}</strong></div>
+              <div><span>Shipping weight</span><strong>${weight(totals.shippingWeight)}</strong></div>
               <div><span>SHIPPING COST</span><strong>${money(totals.shipping)}</strong></div>
               <div><span>TOTAL</span><strong>${money(totals.total)}</strong></div>
             </div>
@@ -1005,8 +1108,14 @@
   }
 
   document.addEventListener("click", async (event) => {
-    const target = event.target.closest("button, .brand, [data-quick-backdrop]");
+    const target = event.target.closest("button, a[data-detail], .brand, [data-quick-backdrop]");
     if (!target) return;
+    if (target.hasAttribute("data-new-arrivals")) {
+      state.newArrivals = !state.newArrivals;
+      updateCatalogUrl();
+      renderCatalog();
+      return;
+    }
     if (target.dataset.quickBackdrop !== undefined && event.target === target) {
       state.quickAddId = null;
       render();
@@ -1014,9 +1123,11 @@
     }
     if (target.dataset.clearFilter) {
       const key = target.dataset.clearFilter;
+      if (key === "new" || key === "all") state.newArrivals = false;
       if (key === "search" || key === "all") state.search = "";
       if (key === "brand" || key === "all") state.brand = "All";
       if (key === "category" || key === "all") state.category = "All";
+      updateCatalogUrl();
       renderCatalog();
       return;
     }
@@ -1026,6 +1137,7 @@
       state.search = "";
       state.brand = target.dataset.filterBrand;
       state.category = "All";
+      updateCatalogUrl();
       render();
       window.setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0);
       return;
@@ -1036,6 +1148,7 @@
       state.search = "";
       state.brand = "All";
       state.category = target.dataset.filterCategory;
+      updateCatalogUrl();
       render();
       window.setTimeout(() => document.getElementById("products")?.scrollIntoView({ behavior: "smooth" }), 0);
       return;
@@ -1043,7 +1156,13 @@
     if (target.dataset.view) {
       state.view = target.dataset.view;
       state.detailId = null;
+      history.pushState(
+        { view: state.view },
+        "",
+        state.view === "catalog" ? "/" : `/#${state.view}`
+      );
       render();
+      return;
     }
     if (target.dataset.adminPage) {
       const totalPages = Math.max(1, Math.ceil(filteredAdminProducts().length / ADMIN_PAGE_SIZE));
@@ -1056,6 +1175,7 @@
     }
     if (target.dataset.scroll) document.getElementById(target.dataset.scroll)?.scrollIntoView({ behavior: "smooth" });
     if (target.dataset.detail) {
+      event.preventDefault();
       openDetail(target.dataset.detail);
       return;
     }
@@ -1192,10 +1312,12 @@
     const el = event.target;
     if (el.dataset.action === "brand") {
       state.brand = el.value;
+      updateCatalogUrl();
       renderCatalog();
     }
     if (el.dataset.action === "category") {
       state.category = el.value;
+      updateCatalogUrl();
       renderCatalog();
     }
     if (el.dataset.action === "sort") {
@@ -1308,7 +1430,7 @@
     }
     whatsappNumber = String(data.whatsapp || whatsappNumber).replace(/[^\d]/g, "") || whatsappNumber;
     const colorOptions = cleanColorList(splitColorText(data.colors));
-    const product = normalizeProduct({
+    const product = {
       id: data.sku.trim(),
       sku: data.sku.trim(),
       brand: data.brand.trim(),
@@ -1319,10 +1441,10 @@
       weight: positiveDecimal(data.weight),
       description: data.description.trim(),
       colors: colorOptions,
-      image: data.image.trim(),
-      images: cleanImageList(String(data.images || "").split(/\n|,/)),
+      image: normalizeAssetUrl(String(data.image || "").trim()),
+      images: cleanImageList(String(data.images || "").split(/\n|,/)).map(normalizeAssetUrl),
       published: data.published === "on",
-    });
+    };
     if (!product.sku || !product.name) return;
     const feedback = form.querySelector("[data-save-feedback]");
     const submitButton = form.querySelector('button[type="submit"]');
@@ -1365,6 +1487,18 @@
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
+  });
+
+  window.addEventListener("popstate", () => {
+    const productId = productIdFromPath();
+    const params = new URLSearchParams(location.search);
+    state.view = productId ? "detail" : location.hash === "#admin" ? "admin" : location.hash === "#cart" ? "cart" : "catalog";
+    state.detailId = productId || null;
+    state.brand = params.get("brand") || "All";
+    state.category = params.get("category") || "All";
+    state.search = params.get("q") || "";
+    state.newArrivals = params.get("new") === "1";
+    render();
   });
 
   loadServerState().then(render);
