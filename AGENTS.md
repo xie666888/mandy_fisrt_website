@@ -119,6 +119,15 @@ easier.
 
 ## 7. Storefront Behaviour
 
+- NEW ARRIVALS filters the last 30 days by server-owned first_published_at.
+  Edits and republication must preserve the first publication timestamp.
+  Legacy published/archived products use -1 (unknown), drafts use 0; never
+  backfill from updated_at. Unknown historical dates are excluded from new arrivals.
+- Best seller marks up to 10 public, non-archived products by cumulative quantity
+  in submitted orders, grouped by stable product ID. These are demand orders,
+  not verified paid sales. Ties use product ID; zero-order products are excluded.
+  Run python scripts/test_merchandising.py when changing these rules.
+
 - Use Arial for storefront UI, admin UI, and every cell in generated order
   Excel files. Order workbooks must also set the Normal/default font to Arial
   and remove theme font schemes; otherwise Chinese Excel can display Songti

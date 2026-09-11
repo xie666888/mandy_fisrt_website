@@ -110,7 +110,7 @@ button { cursor: pointer; }
 .toolbar, .content, .admin, .cart-page, .detail { padding: 28px clamp(18px, 4vw, 56px); }
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1.6fr) repeat(3, minmax(140px, 190px));
+  grid-template-columns: minmax(180px, 1.6fr) auto repeat(3, minmax(120px, 190px));
   gap: 10px;
   align-items: stretch;
   padding-top: 12px;
@@ -121,6 +121,9 @@ button { cursor: pointer; }
 }
 .filter-field { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
 .search-field { position: relative; }
+.new-arrivals { align-self: end; min-height: 44px; padding: 8px 14px; white-space: nowrap; }
+.new-arrivals.active { background: var(--ink); color: #fff; }
+.best-seller { display: inline-block; color: #a33328; font-size: 12px; font-weight: 600; }
 .filter-field > span { padding-left: 2px; }
 .search, select, input, textarea {
   width: 100%;

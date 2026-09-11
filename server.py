@@ -388,7 +388,7 @@ def build_product_page(product, related_products):
     <meta property="og:url" content="{html.escape(canonical, quote=True)}">
     {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/src/styles.css?v=20260706-shipping3">
+    <link rel="stylesheet" href="/src/styles.css?v=20260911-merchandising">
     <script type="application/ld+json">{seo_json(product_schema)}</script>
     <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
     <script type="application/ld+json">{seo_json(faq_schema)}</script>
@@ -411,7 +411,7 @@ def build_product_page(product, related_products):
         <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
       </main>
     </div>
-    <script src="/src/app.js?v=20260709-colors1"></script>
+    <script src="/src/app.js?v=20260911-merchandising"></script>
   </body>
 </html>
 """
@@ -502,15 +502,19 @@ def assign_unique_product_ids_batch(conn, products):
 
 def upsert_product(conn, data):
     product = normalize_product(data)
+    existing = conn.execute("SELECT first_published_at FROM products WHERE id = ?", (product["id"],)).fetchone()
+    product["first_published_at"] = (existing["first_published_at"] if existing else 0)
+    if not product["first_published_at"] and product["published"] and not product["archived_at"]:
+        product["first_published_at"] = now()
     conn.execute(
         """
         INSERT INTO products (
             id, sku, brand, name, category, price, stock, weight,
-            description, colors_json, image, images_json, published, archived_at, sort_order, updated_at
+            description, colors_json, image, images_json, published, archived_at, sort_order, updated_at, first_published_at
         )
         VALUES (
             :id, :sku, :brand, :name, :category, :price, :stock, :weight,
-            :description, :colors_json, :image, :images_json, :published, :archived_at, :sort_order, :updated_at
+            :description, :colors_json, :image, :images_json, :published, :archived_at, :sort_order, :updated_at, :first_published_at
         )
         ON CONFLICT(id) DO UPDATE SET
             sku = excluded.sku,
@@ -527,11 +531,24 @@ def upsert_product(conn, data):
             published = excluded.published,
             archived_at = excluded.archived_at,
             sort_order = excluded.sort_order,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            first_published_at = excluded.first_published_at
         """,
         product,
     )
     return product["id"]
+
+
+def best_seller_ids(conn):
+    rows = conn.execute("""
+        SELECT p.id, SUM(CAST(json_extract(item.value, '$.qty') AS INTEGER)) AS quantity
+        FROM orders o, json_each(CASE WHEN json_valid(o.items_json) THEN o.items_json ELSE '[]' END) item
+        JOIN products p ON p.id = json_extract(item.value, '$.id')
+        WHERE p.published = 1 AND p.archived_at = 0
+          AND CAST(json_extract(item.value, '$.qty') AS INTEGER) > 0
+        GROUP BY p.id ORDER BY quantity DESC, p.id ASC LIMIT 10
+    """).fetchall()
+    return {row["id"] for row in rows}
 
 
 def seed_products(conn):
@@ -660,6 +677,10 @@ def init_db():
         )
 
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(products)").fetchall()}
+        if "first_published_at" not in columns:
+            conn.execute("ALTER TABLE products ADD COLUMN first_published_at INTEGER NOT NULL DEFAULT 0")
+            # Historical published dates are unknown; -1 prevents edits marking old stock as new.
+            conn.execute("UPDATE products SET first_published_at = -1 WHERE published = 1 OR archived_at > 0")
         if "images_json" not in columns:
             conn.execute("ALTER TABLE products ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'")
         if "sort_order" not in columns:
@@ -1497,7 +1518,13 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
         where = "WHERE archived_at = 0" if include_drafts else "WHERE published = 1 AND archived_at = 0"
         with connect() as conn:
             rows = conn.execute(f"SELECT * FROM products {where} ORDER BY sort_order ASC, brand, name").fetchall()
-        return json_response(self, 200, {"products": [product_from_row(row) for row in rows]})
+            best_sellers = best_seller_ids(conn)
+        cutoff = now() - 30 * 86400
+        products = [product_from_row(row) for row in rows]
+        for product in products:
+            product["is_new_arrival"] = cutoff <= product["first_published_at"] <= now()
+            product["is_best_seller"] = product["id"] in best_sellers
+        return json_response(self, 200, {"products": products})
 
     def handle_product_create(self):
         try:

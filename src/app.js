@@ -24,6 +24,7 @@
     search: initialParams.get("q") || "",
     brand: initialParams.get("brand") || "All",
     category: initialParams.get("category") || "All",
+    newArrivals: initialParams.get("new") === "1",
     sort: "featured",
     editingId: null,
     selectedColor: "",
@@ -290,6 +291,7 @@
   function filteredProducts() {
     const q = state.search.trim().toLowerCase();
     let list = products.filter((p) => p.published !== false);
+    if (state.newArrivals) list = list.filter((p) => p.is_new_arrival);
     if (q) list = list.filter((p) => [p.sku, p.brand, p.name, p.description, p.category].join(" ").toLowerCase().includes(q));
     if (state.brand !== "All") list = list.filter((p) => p.brand === state.brand);
     if (state.category !== "All") list = list.filter((p) => p.category === state.category);
@@ -394,6 +396,7 @@
 
   function activeFilterChips() {
     const chips = [];
+    if (state.newArrivals) chips.push({ label: "New arrivals", key: "new" });
     if (state.search.trim()) chips.push({ label: `Search: ${state.search.trim()}`, key: "search" });
     if (state.brand !== "All") chips.push({ label: `Brand: ${state.brand}`, key: "brand" });
     if (state.category !== "All") chips.push({ label: `Category: ${state.category}`, key: "category" });
@@ -508,6 +511,7 @@
 
   function updateCatalogUrl() {
     const params = new URLSearchParams();
+    if (state.newArrivals) params.set("new", "1");
     if (state.brand !== "All") params.set("brand", state.brand);
     if (state.category !== "All") params.set("category", state.category);
     const query = params.toString();
@@ -589,6 +593,7 @@
       <div class="catalog-sticky">
         <section class="toolbar" id="products">
           <label class="filter-field search-field"><span>Search</span><input class="search" data-action="search" placeholder="Search SKU, brand, product..." value="${escapeHTML(state.search)}">${searchSuggestions()}</label>
+          <button type="button" class="new-arrivals ${state.newArrivals ? "active" : ""}" data-new-arrivals aria-pressed="${state.newArrivals}">NEW ARRIVALS</button>
           <label class="filter-field"><span>Brand</span><select data-action="brand">${brands().map((b) => `<option ${b === state.brand ? "selected" : ""}>${escapeHTML(b)}</option>`).join("")}</select></label>
           <label class="filter-field"><span>Category</span><select data-action="category">${categories().map((c) => `<option ${c === state.category ? "selected" : ""}>${escapeHTML(c)}</option>`).join("")}</select></label>
           <label class="filter-field"><span>Sort</span><select data-action="sort">
@@ -638,7 +643,7 @@
             <button class="tag tag-button" data-filter-brand="${escapeHTML(p.brand)}" title="Show all ${escapeHTML(p.brand)} products">${escapeHTML(p.brand)}</button>
             <button class="tag tag-button" data-filter-category="${escapeHTML(p.category)}" title="Show all ${escapeHTML(p.category)} products">${escapeHTML(p.category)}</button>
           </div>
-          <h3><a class="product-title-link" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}">${escapeHTML(p.name)}</a></h3>
+          <h3><a class="product-title-link" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}">${escapeHTML(p.name)}</a>${p.is_best_seller ? ' <span class="best-seller">best seller</span>' : ""}</h3>
           <p class="desc">${escapeHTML(p.description)}</p>
           <div class="card-signals"><span>${options.length} shade${options.length === 1 ? "" : "s"}</span><span>SKU ${escapeHTML(p.sku)}</span></div>
           ${cartStatusForProduct(p.id)}
@@ -1105,6 +1110,12 @@
   document.addEventListener("click", async (event) => {
     const target = event.target.closest("button, a[data-detail], .brand, [data-quick-backdrop]");
     if (!target) return;
+    if (target.hasAttribute("data-new-arrivals")) {
+      state.newArrivals = !state.newArrivals;
+      updateCatalogUrl();
+      renderCatalog();
+      return;
+    }
     if (target.dataset.quickBackdrop !== undefined && event.target === target) {
       state.quickAddId = null;
       render();
@@ -1112,6 +1123,7 @@
     }
     if (target.dataset.clearFilter) {
       const key = target.dataset.clearFilter;
+      if (key === "new" || key === "all") state.newArrivals = false;
       if (key === "search" || key === "all") state.search = "";
       if (key === "brand" || key === "all") state.brand = "All";
       if (key === "category" || key === "all") state.category = "All";
@@ -1485,6 +1497,7 @@
     state.brand = params.get("brand") || "All";
     state.category = params.get("category") || "All";
     state.search = params.get("q") || "";
+    state.newArrivals = params.get("new") === "1";
     render();
   });
 
