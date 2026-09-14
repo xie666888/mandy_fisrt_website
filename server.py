@@ -2,9 +2,11 @@
 import base64
 import hashlib
 import hmac
+import html
 import io
 import json
 import logging
+import math
 import mimetypes
 import os
 import secrets
@@ -15,7 +17,7 @@ import re
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 try:
     from PIL import Image as _PILImage
@@ -46,6 +48,38 @@ MAX_IMAGE_BATCH_UPLOAD_BYTES = 220 * 1024 * 1024
 MAX_JSON_BYTES = 10 * 1024 * 1024
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "0") == "1"
 HTTPS_ENABLED = os.environ.get("HTTPS", "0") == "1"
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://bebeauty.top").rstrip("/")
+
+SEO_SITE_NAME = "BeBeauty Wholesale Catalog"
+SEO_HOME_DESCRIPTION = (
+    "Browse wholesale cosmetics and beauty products by brand, category, SKU, "
+    "shade and price. Create an order number for supplier confirmation."
+)
+SEO_FAQ = [
+    (
+        "Are these products authentic?",
+        "No. These are replica products and are not sold as authentic branded goods.",
+    ),
+    (
+        "Can every product be scanned in the Sephora app?",
+        "No. Sephora app scanning is not guaranteed for these products.",
+    ),
+    (
+        "How does the order process work?",
+        "Add products, shades and quantities to the cart, create an order number, "
+        "then confirm availability and the Alibaba payment link through WhatsApp.",
+    ),
+    (
+        "How long does delivery take?",
+        "Goods are normally sent to the forwarder within three working days after "
+        "payment. Forwarder delivery is usually 12 to 15 days.",
+    ),
+    (
+        "What happens if goods are damaged during transportation?",
+        "A replacement can be sent with the next order or the damaged item cost can "
+        "be refunded after confirmation.",
+    ),
+]
 
 _local = threading.local()
 
@@ -72,6 +106,16 @@ def json_response(handler, status, payload):
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Cache-Control", "no-store, max-age=0")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def text_response(handler, status, text, content_type, cache_control="public, max-age=3600"):
+    body = text.encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Cache-Control", cache_control)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -213,6 +257,166 @@ def product_from_row(row):
     return product
 
 
+def product_page_url(product_id):
+    return f"{PUBLIC_BASE_URL}/product/{quote(str(product_id), safe='')}"
+
+
+def absolute_media_url(value):
+    value = str(value or "").strip().replace("\\", "/")
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://")):
+        return value
+    path = value.removeprefix("./").lstrip("/")
+    return f"{PUBLIC_BASE_URL}/{quote(path, safe='/%:@?&=+$,;~.-_')}"
+
+
+def seo_description(product):
+    description = re.sub(r"\s+", " ", str(product.get("description") or "")).strip()
+    identity = " ".join(
+        part
+        for part in [
+            str(product.get("name") or "").strip(),
+            f"by {str(product.get('brand') or '').strip()}" if product.get("brand") else "",
+            f"SKU {str(product.get('sku') or '').strip()}" if product.get("sku") else "",
+        ]
+        if part
+    )
+    suffix = "Wholesale beauty catalog with shade selection and order-number confirmation."
+    text = ". ".join(part.rstrip(".") for part in [identity, description, suffix] if part)
+    return text[:157].rstrip(" ,.;") + "."
+
+
+def seo_json(data):
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+
+
+def build_product_page(product, related_products):
+    name = str(product.get("name") or product.get("sku") or "Wholesale beauty product")
+    brand = str(product.get("brand") or "Unbranded")
+    category = str(product.get("category") or "Cosmetics")
+    sku = str(product.get("sku") or product.get("id") or "")
+    description = seo_description(product)
+    canonical = product_page_url(product.get("id") or sku)
+    image = absolute_media_url(product.get("image"))
+    images = [absolute_media_url(item) for item in product.get("images") or []]
+    images = [item for item in dict.fromkeys([image, *images]) if item]
+    title = f"{name} Wholesale | {brand} | BeBeauty"
+    price = f"{float(product.get('price') or 0):.2f}"
+
+    product_schema = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": name,
+        "sku": sku,
+        "category": category,
+        "description": description,
+        "url": canonical,
+        "brand": {"@type": "Brand", "name": brand},
+        "offers": {
+            "@type": "Offer",
+            "url": canonical,
+            "priceCurrency": "USD",
+            "price": price,
+            "seller": {
+                "@type": "Organization",
+                "name": SEO_SITE_NAME,
+                "url": PUBLIC_BASE_URL,
+            },
+        },
+    }
+    if images:
+        product_schema["image"] = images
+    breadcrumb_schema = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Wholesale beauty products",
+                "item": f"{PUBLIC_BASE_URL}/",
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": brand,
+                "item": f"{PUBLIC_BASE_URL}/?brand={quote(brand)}",
+            },
+            {"@type": "ListItem", "position": 3, "name": name, "item": canonical},
+        ],
+    }
+    faq_schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": question,
+                "acceptedAnswer": {"@type": "Answer", "text": answer},
+            }
+            for question, answer in SEO_FAQ
+        ],
+    }
+    related_html = "".join(
+        f'<li><a href="{html.escape(product_page_url(item["id"]), quote=True)}">'
+        f'{html.escape(str(item["name"]))}</a> by {html.escape(str(item["brand"]))}</li>'
+        for item in related_products
+    )
+    image_html = (
+        f'<img src="{html.escape(image, quote=True)}" alt="{html.escape(name, quote=True)}" '
+        'width="395" height="395" loading="eager">'
+        if image
+        else ""
+    )
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/">
+    <title>{html.escape(title)}</title>
+    <meta name="description" content="{html.escape(description, quote=True)}">
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+    <link rel="canonical" href="{html.escape(canonical, quote=True)}">
+    <link rel="alternate" hreflang="en" href="{html.escape(canonical, quote=True)}">
+    <link rel="alternate" hreflang="x-default" href="{html.escape(canonical, quote=True)}">
+    <meta property="og:type" content="product">
+    <meta property="og:site_name" content="{html.escape(SEO_SITE_NAME, quote=True)}">
+    <meta property="og:title" content="{html.escape(title, quote=True)}">
+    <meta property="og:description" content="{html.escape(description, quote=True)}">
+    <meta property="og:url" content="{html.escape(canonical, quote=True)}">
+    {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="/src/styles.css?v=20260911-round-button">
+    <script type="application/ld+json">{seo_json(product_schema)}</script>
+    <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
+    <script type="application/ld+json">{seo_json(faq_schema)}</script>
+  </head>
+  <body>
+    <div id="app">
+      <main class="detail seo-product">
+        <nav aria-label="Breadcrumb"><a href="/">Wholesale beauty products</a> / {html.escape(brand)}</nav>
+        <article class="detail-layout">
+          <div class="gallery"><div class="product-image">{image_html}</div></div>
+          <section>
+            <p>{html.escape(brand)} · {html.escape(category)} · SKU {html.escape(sku)}</p>
+            <h1>{html.escape(name)}</h1>
+            <p class="price">${price}</p>
+            <h2>Product information</h2>
+            <p>{html.escape(str(product.get("description") or description))}</p>
+            <p><a href="/#products">Browse the wholesale catalog</a></p>
+          </section>
+        </article>
+        <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
+      </main>
+    </div>
+    <script src="/src/app.js?v=20260911-merchandising"></script>
+  </body>
+</html>
+"""
+
+
 def split_color_text(value):
     return [item.strip() for item in str(value or "").split("/") if item.strip()]
 
@@ -298,15 +502,19 @@ def assign_unique_product_ids_batch(conn, products):
 
 def upsert_product(conn, data):
     product = normalize_product(data)
+    existing = conn.execute("SELECT first_published_at FROM products WHERE id = ?", (product["id"],)).fetchone()
+    product["first_published_at"] = (existing["first_published_at"] if existing else 0)
+    if not product["first_published_at"] and product["published"] and not product["archived_at"]:
+        product["first_published_at"] = now()
     conn.execute(
         """
         INSERT INTO products (
             id, sku, brand, name, category, price, stock, weight,
-            description, colors_json, image, images_json, published, archived_at, sort_order, updated_at
+            description, colors_json, image, images_json, published, archived_at, sort_order, updated_at, first_published_at
         )
         VALUES (
             :id, :sku, :brand, :name, :category, :price, :stock, :weight,
-            :description, :colors_json, :image, :images_json, :published, :archived_at, :sort_order, :updated_at
+            :description, :colors_json, :image, :images_json, :published, :archived_at, :sort_order, :updated_at, :first_published_at
         )
         ON CONFLICT(id) DO UPDATE SET
             sku = excluded.sku,
@@ -323,11 +531,24 @@ def upsert_product(conn, data):
             published = excluded.published,
             archived_at = excluded.archived_at,
             sort_order = excluded.sort_order,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            first_published_at = excluded.first_published_at
         """,
         product,
     )
     return product["id"]
+
+
+def best_seller_ids(conn):
+    rows = conn.execute("""
+        SELECT p.id, SUM(CAST(json_extract(item.value, '$.qty') AS INTEGER)) AS quantity
+        FROM orders o, json_each(CASE WHEN json_valid(o.items_json) THEN o.items_json ELSE '[]' END) item
+        JOIN products p ON p.id = json_extract(item.value, '$.id')
+        WHERE p.published = 1 AND p.archived_at = 0
+          AND CAST(json_extract(item.value, '$.qty') AS INTEGER) > 0
+        GROUP BY p.id ORDER BY quantity DESC, p.id ASC LIMIT 10
+    """).fetchall()
+    return {row["id"] for row in rows}
 
 
 def seed_products(conn):
@@ -409,6 +630,7 @@ def init_db():
                 items_json TEXT NOT NULL,
                 product_total REAL NOT NULL DEFAULT 0,
                 total_weight REAL NOT NULL DEFAULT 0,
+                shipping_weight REAL NOT NULL DEFAULT 0,
                 shipping REAL NOT NULL DEFAULT 0,
                 total REAL NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL
@@ -455,12 +677,19 @@ def init_db():
         )
 
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(products)").fetchall()}
+        if "first_published_at" not in columns:
+            conn.execute("ALTER TABLE products ADD COLUMN first_published_at INTEGER NOT NULL DEFAULT 0")
+            # Historical published dates are unknown; -1 prevents edits marking old stock as new.
+            conn.execute("UPDATE products SET first_published_at = -1 WHERE published = 1 OR archived_at > 0")
         if "images_json" not in columns:
             conn.execute("ALTER TABLE products ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'")
         if "sort_order" not in columns:
             conn.execute("ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
         if "archived_at" not in columns:
             conn.execute("ALTER TABLE products ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0")
+        order_columns = {row["name"] for row in conn.execute("PRAGMA table_info(orders)").fetchall()}
+        if "shipping_weight" not in order_columns:
+            conn.execute("ALTER TABLE orders ADD COLUMN shipping_weight REAL NOT NULL DEFAULT 0")
         seed_products(conn)
         conn.commit()
 
@@ -472,8 +701,15 @@ def parse_cookie(header):
     return jar
 
 
-def shipping_cost(country, weight_kg):
-    weight = max(0, float(weight_kg or 0))
+def billable_shipping_weight(country, product_weight_kg):
+    product_weight = max(0, float(product_weight_kg or 0))
+    if country != "Europe" or product_weight <= 6:
+        return product_weight
+    return math.ceil((product_weight + 2 - 1e-12) * 2) / 2
+
+
+def shipping_cost(country, billable_weight_kg):
+    weight = max(0, float(billable_weight_kg or 0))
     if country == "United States":
         if weight <= 0.7:
             return 48.8
@@ -492,20 +728,20 @@ def shipping_cost(country, weight_kg):
         return weight * 17.3
 
     if weight <= 0.7:
-        return 29.8
-    if weight <= 1.2:
+        return 31.2
+    if weight <= 1.5:
         return 35.2
     if weight <= 2:
         return 43.8
     if weight <= 3:
-        return 49.8
+        return 52.3
     if weight <= 4:
-        return 59.5
+        return 61.8
     if weight <= 5:
-        return 71.6
-    if weight <= 15:
-        return weight * 10.3
-    return weight * 9.85
+        return 72.3
+    if weight <= 6:
+        return 81.4
+    return weight * 10.8
 
 
 def local_image_path(image_url):
@@ -687,13 +923,15 @@ def prepare_order_data(cart_items, country):
             }
         )
 
-    shipping = round(shipping_cost(country, total_weight), 2)
+    shipping_weight = billable_shipping_weight(country, total_weight)
+    shipping = round(shipping_cost(country, shipping_weight), 2)
     total = round(product_total + shipping, 2)
     return {
         "country": country,
         "items": lines,
         "product_total": round(product_total, 2),
         "total_weight": round(total_weight, 3),
+        "shipping_weight": round(shipping_weight, 3),
         "shipping": shipping,
         "total": total,
     }
@@ -714,9 +952,9 @@ def create_order_record(cart_items, country):
                     """
                     INSERT INTO orders (
                         order_no, country, items_json, product_total, total_weight,
-                        shipping, total, created_at
+                        shipping_weight, shipping, total, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         order_no,
@@ -724,6 +962,7 @@ def create_order_record(cart_items, country):
                         json.dumps(order["items"], ensure_ascii=False),
                         order["product_total"],
                         order["total_weight"],
+                        order["shipping_weight"],
                         order["shipping"],
                         order["total"],
                         created_at,
@@ -755,6 +994,8 @@ def load_order_record(order_no):
 
 
 def build_order_workbook_from_data(order):
+    from copy import copy
+
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as XLImage
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -762,6 +1003,12 @@ def build_order_workbook_from_data(order):
     wb = Workbook()
     ws = wb.active
     ws.title = "Order"
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
+    wb.calculation.calcMode = "auto"
+    default_font = Font(name="Arial", size=11, family=2)
+    wb._fonts[0] = default_font
+    wb._named_styles["Normal"].font = default_font
     if order.get("order_no"):
         ws.append(["Order No", order.get("order_no")])
         ws.append(["Created at", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(order.get("created_at") or now())))])
@@ -769,95 +1016,176 @@ def build_order_workbook_from_data(order):
 
     headers = [
         "NO",
-        "SKU",
         "Brand",
         "Item Name",
         "Picture",
         "Shade/Type",
         "Unit Price",
         "QTY",
+        "Product weight(kg)",
         "Extended price",
-        "Weight(kg)",
+        "Informations",
+        "Unit weight helper",
     ]
     ws.append(headers)
     header_row = ws.max_row
     header_fill = PatternFill("solid", fgColor="1F1A17")
     for cell in ws[header_row]:
         cell.fill = header_fill
-        cell.font = Font(color="FFFFFF", bold=True)
+        cell.font = Font(name="Arial", family=2, color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    for index, item in enumerate(order.get("items") or [], 1):
+    grouped_items = []
+    grouped_index = {}
+    for item in order.get("items") or []:
         unit_price = float(item.get("price") or 0)
         qty = max(1, int(float(item.get("qty") or 1)))
-        unit_weight = float(item.get("weight") or 0)
         extended = float(item.get("extended") or unit_price * qty)
-        line_weight = float(item.get("line_weight") or unit_weight * qty)
+        line_weight = float(item.get("line_weight") or float(item.get("weight") or 0) * qty)
+        brand = str(item.get("brand") or "")
+        name = str(item.get("name") or "")
+        image_url = str(item.get("image") or "")
+        shade = str(item.get("color") or "Default").strip() or "Default"
+        key = (brand, name, round(unit_price, 6), image_url)
+        group = grouped_index.get(key)
+        if not group:
+            group = {
+                "brand": brand,
+                "name": name,
+                "image": image_url,
+                "price": unit_price,
+                "qty": 0,
+                "line_weight": 0.0,
+                "unit_weight": 0.0,
+                "extended": 0.0,
+                "shade_order": [],
+                "shade_qty": {},
+            }
+            grouped_index[key] = group
+            grouped_items.append(group)
+        group["qty"] += qty
+        group["line_weight"] += line_weight
+        if qty:
+            group["unit_weight"] = line_weight / qty
+        group["extended"] += extended
+        if shade not in group["shade_qty"]:
+            group["shade_order"].append(shade)
+            group["shade_qty"][shade] = 0
+        group["shade_qty"][shade] += qty
+
+    for index, item in enumerate(grouped_items, 1):
+        shade_text = "\n".join(item["shade_order"])
+        information_text = "\n".join(f"{shade} * {item['shade_qty'][shade]} PCS" for shade in item["shade_order"])
         row_number = ws.max_row + 1
         ws.append(
             [
                 index,
-                item.get("sku") or "",
-                item.get("brand") or "",
-                item.get("name") or "",
+                item["brand"],
+                item["name"],
                 "",
-                item.get("color") or "Default",
-                unit_price,
-                qty,
-                extended,
-                line_weight,
+                shade_text,
+                item["price"],
+                item["qty"],
+                f"=G{row_number}*K{row_number}",
+                f"=F{row_number}*G{row_number}",
+                information_text,
+                round(item["line_weight"] / item["qty"], 6) if item["qty"] else 0,
             ]
         )
-        ws.row_dimensions[row_number].height = 58
-        image_path = local_image_path(item.get("image"))
+        min_row_height = 56
+        text_height = max(len(item["shade_order"]), 1) * 15 + 18
+        ws.row_dimensions[row_number].height = max(min_row_height, text_height)
+        image_path = local_image_path(item["image"])
         if image_path:
             try:
                 image = XLImage(str(image_path))
-                max_width, max_height = 72, 58
-                ratio = min(max_width / image.width, max_height / image.height, 1)
-                image.width = int(image.width * ratio)
-                image.height = int(image.height * ratio)
-                ws.add_image(image, f"E{row_number}")
+                target_width = 119
+                if image.width:
+                    image.height = int(image.height * (target_width / image.width))
+                    image.width = target_width
+                    ws.row_dimensions[row_number].height = max(min_row_height, image.height * 0.75 + 8, text_height)
+                ws.add_image(image, f"D{row_number}")
             except Exception:
                 pass
 
-    summary_start = ws.max_row + 2
+    item_end_row = ws.max_row
+    formula_end_row = max(item_end_row, header_row + 500)
+    ws.append([])
+    summary_start = item_end_row + 2
+    country_row = summary_start
+    product_total_row = summary_start + 1
+    shipping_weight_row = summary_start + 2
+    shipping_cost_row = summary_start + 3
+    detail_start_row = header_row + 1
+    product_total_formula = f"=SUM(I{detail_start_row}:I{formula_end_row})"
+    product_weight_formula = f"SUM(H{detail_start_row}:H{formula_end_row})"
+    country_cell = f"J{country_row}"
+    shipping_weight_cell = f"J{shipping_weight_row}"
+    shipping_weight_formula = (
+        f'=IF({country_cell}<>"Europe",{product_weight_formula},'
+        f'IF({product_weight_formula}<=6,{product_weight_formula},'
+        f'CEILING({product_weight_formula}+2,0.5)))'
+    )
+    shipping_cost_formula = (
+        f'=IF({country_cell}="United States",'
+        f'IF({shipping_weight_cell}<=0.7,48.8,IF({shipping_weight_cell}<=1.2,65.4,'
+        f'IF({shipping_weight_cell}<=2,79.8,IF({shipping_weight_cell}<=3,84.2,'
+        f'IF({shipping_weight_cell}<=4,94.2,IF({shipping_weight_cell}<=5,{shipping_weight_cell}*21.3,'
+        f'IF({shipping_weight_cell}<=15,{shipping_weight_cell}*19.3,{shipping_weight_cell}*17.3))))))),'
+        f'IF({shipping_weight_cell}<=0.7,31.2,IF({shipping_weight_cell}<=1.5,35.2,'
+        f'IF({shipping_weight_cell}<=2,43.8,IF({shipping_weight_cell}<=3,52.3,'
+        f'IF({shipping_weight_cell}<=4,61.8,IF({shipping_weight_cell}<=5,72.3,'
+        f'IF({shipping_weight_cell}<=6,81.4,{shipping_weight_cell}*10.8))))))))'
+    )
     summary_rows = [
         ("Shipping country", order.get("country") or "Europe"),
-        ("Total product cost", float(order.get("product_total") or 0)),
-        ("Total weight(kg)", float(order.get("total_weight") or 0)),
-        ("SHIPPING COST", float(order.get("shipping") or 0)),
-        ("TOTAL", float(order.get("total") or 0)),
+        ("Total product cost", product_total_formula),
+        ("Shipping weight (kg)", shipping_weight_formula),
+        ("SHIPPING COST", shipping_cost_formula),
+        ("TOTAL", f"=J{product_total_row}+J{shipping_cost_row}"),
     ]
     for label, value in summary_rows:
-        ws.append(["", "", "", "", "", "", "", label, value, ""])
+        ws.append(["", "", "", "", "", "", "", "", label, value])
 
     widths = {
         "A": 8,
         "B": 18,
-        "C": 18,
-        "D": 42,
-        "E": 14,
-        "F": 18,
-        "G": 12,
-        "H": 10,
+        "C": 46,
+        "D": 12,
+        "E": 18,
+        "F": 12,
+        "G": 10,
+        "H": 18,
         "I": 16,
-        "J": 14,
+        "J": 24,
+        "K": 14,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
     for row in ws.iter_rows(min_row=header_row + 1, max_row=ws.max_row):
         for cell in row:
             cell.alignment = Alignment(vertical="center", wrap_text=True)
-    for row in range(header_row + 1, ws.max_row + 1):
-        ws[f"G{row}"].number_format = "$0.00"
+    for row in range(header_row + 1, item_end_row + 1):
+        ws[f"F{row}"].number_format = "$0.00"
+        ws[f"H{row}"].number_format = "0.000"
         ws[f"I{row}"].number_format = "$0.00"
-        ws[f"J{row}"].number_format = "0.000"
+        ws[f"K{row}"].number_format = "0.000000"
+    ws.column_dimensions["K"].hidden = True
     for row in range(summary_start, ws.max_row + 1):
-        ws[f"H{row}"].font = Font(bold=True)
-        ws[f"I{row}"].font = Font(bold=True)
-        if ws[f"H{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
-            ws[f"I{row}"].number_format = "$0.00"
+        ws[f"I{row}"].font = Font(name="Arial", family=2, bold=True)
+        ws[f"J{row}"].font = Font(name="Arial", family=2, bold=True)
+        if ws[f"I{row}"].value in {"Total product cost", "SHIPPING COST", "TOTAL"}:
+            ws[f"J{row}"].number_format = "$0.00"
+        if ws[f"I{row}"].value == "Shipping weight (kg)":
+            ws[f"J{row}"].number_format = "0.000"
+    for row in ws.iter_rows():
+        for cell in row:
+            font = copy(cell.font)
+            font.name = "Arial"
+            font.family = 2
+            font.scheme = None
+            font.charset = None
+            cell.font = font
     ws.freeze_panes = f"A{header_row + 1}"
 
     output = io.BytesIO()
@@ -879,6 +1207,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if urlparse(self.path).path.startswith("/api/"):
+            self.send_header("X-Robots-Tag", "noindex, nofollow")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; "
@@ -894,6 +1224,15 @@ class CatalogHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/robots.txt":
+            return self.handle_robots()
+        if parsed.path == "/sitemap.xml":
+            return self.handle_sitemap()
+        if parsed.path == "/llms.txt":
+            return self.handle_llms()
+        if parsed.path.startswith("/product/"):
+            product_id = unquote(parsed.path.removeprefix("/product/")).rstrip("/")
+            return self.handle_product_page(product_id)
         if parsed.path == "/api/products":
             return self.handle_products(parse_qs(parsed.query))
         if parsed.path == "/api/me":
@@ -922,12 +1261,8 @@ class CatalogHandler(BaseHTTPRequestHandler):
             return self.handle_order_excel()
         if parsed.path == "/api/products":
             return self.require_admin(self.handle_product_create)
-        if parsed.path == "/api/products/bulk":
-            return self.require_admin(self.handle_products_bulk)
         if parsed.path == "/api/uploads/images":
             return self.require_admin(self.handle_image_upload)
-        if parsed.path == "/api/products/reset":
-            return self.require_admin(self.handle_products_reset)
         return json_response(self, 404, {"error": "Not found"})
 
     def do_PUT(self):
@@ -1024,12 +1359,172 @@ class CatalogHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def handle_robots(self):
+        content = (
+            "User-agent: *\n"
+            "Allow: /\n"
+            "Disallow: /api/\n"
+            f"Sitemap: {PUBLIC_BASE_URL}/sitemap.xml\n"
+            f"Host: {urlparse(PUBLIC_BASE_URL).netloc}\n"
+        )
+        return text_response(self, 200, content, "text/plain; charset=utf-8")
+
+    def handle_sitemap(self):
+        with connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, name, image, updated_at
+                FROM products
+                WHERE published = 1 AND archived_at = 0
+                ORDER BY updated_at DESC, id
+                """
+            ).fetchall()
+        entries = [
+            (
+                f"  <url><loc>{html.escape(PUBLIC_BASE_URL + '/')}</loc>"
+                "<changefreq>daily</changefreq><priority>1.0</priority></url>"
+            )
+        ]
+        for row in rows:
+            updated_at = int(row["updated_at"] or 0)
+            lastmod = time.strftime("%Y-%m-%d", time.gmtime(updated_at)) if updated_at else ""
+            image = absolute_media_url(row["image"])
+            parts = [
+                "  <url>",
+                f"<loc>{html.escape(product_page_url(row['id']))}</loc>",
+                f"<lastmod>{lastmod}</lastmod>" if lastmod else "",
+                "<changefreq>weekly</changefreq><priority>0.8</priority>",
+            ]
+            if image:
+                parts.extend(
+                    [
+                        "<image:image>",
+                        f"<image:loc>{html.escape(image)}</image:loc>",
+                        f"<image:title>{html.escape(str(row['name']))}</image:title>",
+                        "</image:image>",
+                    ]
+                )
+            parts.append("</url>")
+            entries.append("".join(parts))
+        sitemap = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+            'xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n'
+            + "\n".join(entries)
+            + "\n</urlset>\n"
+        )
+        return text_response(self, 200, sitemap, "application/xml; charset=utf-8")
+
+    def handle_llms(self):
+        with connect() as conn:
+            product_count = conn.execute(
+                "SELECT COUNT(*) FROM products WHERE published = 1 AND archived_at = 0"
+            ).fetchone()[0]
+            brands = conn.execute(
+                """
+                SELECT brand, COUNT(*) AS count
+                FROM products
+                WHERE published = 1 AND archived_at = 0 AND brand <> ''
+                GROUP BY brand
+                ORDER BY count DESC, brand
+                LIMIT 30
+                """
+            ).fetchall()
+            categories = conn.execute(
+                """
+                SELECT category, COUNT(*) AS count
+                FROM products
+                WHERE published = 1 AND archived_at = 0 AND category <> ''
+                GROUP BY category
+                ORDER BY count DESC, category
+                """
+            ).fetchall()
+        brand_text = ", ".join(f"{row['brand']} ({row['count']})" for row in brands)
+        category_text = ", ".join(f"{row['category']} ({row['count']})" for row in categories)
+        content = f"""# {SEO_SITE_NAME}
+
+> A B2B wholesale cosmetics catalog for browsing products, choosing shades and quantities, and creating an order number for supplier confirmation.
+
+## Canonical website
+
+- Website: {PUBLIC_BASE_URL}/
+- Product sitemap: {PUBLIC_BASE_URL}/sitemap.xml
+- Published products: {product_count}
+
+## Catalog
+
+- Major brands: {brand_text}
+- Categories: {category_text}
+- Product pages include SKU, brand, category, USD price, shade choices, product information and images.
+
+## Ordering
+
+1. Add products, shades and quantities to the cart.
+2. Select Europe or United States for shipping.
+3. Create an order number.
+4. Send the order number through WhatsApp for availability confirmation.
+5. The supplier provides an Alibaba payment link after details are agreed.
+
+## Important product information
+
+- Availability is confirmed manually after an order number is created.
+- Sephora app scanning is not guaranteed.
+- Products are replica products and are not sold as authentic branded goods.
+- Goods are normally sent to the forwarder within three working days after payment.
+- Forwarder delivery is usually 12 to 15 days.
+
+## Contact workflow
+
+Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the supplier conversation through the WhatsApp action provided by the website.
+"""
+        return text_response(self, 200, content, "text/plain; charset=utf-8")
+
+    def handle_product_page(self, product_id):
+        if not product_id:
+            return self.send_error(404)
+        with connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM products
+                WHERE id = ? AND published = 1 AND archived_at = 0
+                """,
+                (product_id,),
+            ).fetchone()
+            if not row:
+                return self.send_error(404)
+            product = product_from_row(row)
+            related_rows = conn.execute(
+                """
+                SELECT * FROM products
+                WHERE id <> ? AND published = 1 AND archived_at = 0
+                    AND (brand = ? OR category = ?)
+                ORDER BY CASE WHEN brand = ? THEN 0 ELSE 1 END,
+                         sort_order ASC, name ASC
+                LIMIT 8
+                """,
+                (product_id, product["brand"], product["category"], product["brand"]),
+            ).fetchall()
+        page = build_product_page(product, [product_from_row(item) for item in related_rows])
+        return text_response(
+            self,
+            200,
+            page,
+            "text/html; charset=utf-8",
+            cache_control="public, max-age=300",
+        )
+
     def handle_products(self, query):
         include_drafts = query.get("include_drafts", ["0"])[0] == "1" and bool(self.current_user())
         where = "WHERE archived_at = 0" if include_drafts else "WHERE published = 1 AND archived_at = 0"
         with connect() as conn:
             rows = conn.execute(f"SELECT * FROM products {where} ORDER BY sort_order ASC, brand, name").fetchall()
-        return json_response(self, 200, {"products": [product_from_row(row) for row in rows]})
+            best_sellers = best_seller_ids(conn)
+        cutoff = now() - 30 * 86400
+        products = [product_from_row(row) for row in rows]
+        for product in products:
+            product["is_new_arrival"] = cutoff <= product["first_published_at"] <= now()
+            product["is_best_seller"] = product["id"] in best_sellers
+        return json_response(self, 200, {"products": products})
 
     def handle_product_create(self):
         try:
@@ -1064,22 +1559,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
             return json_response(self, 404, {"error": "Product not found"})
         return json_response(self, 200, {"ok": True, "archived": True})
 
-    def handle_products_bulk(self):
-        try:
-            data = read_json(self)
-            products = data.get("products") or []
-            if not isinstance(products, list):
-                raise ValueError("products must be a list")
-            with connect() as conn:
-                conn.execute("DELETE FROM products")
-                assign_unique_product_ids_batch(conn, products)
-                for product in products:
-                    upsert_product(conn, product)
-                conn.commit()
-            return json_response(self, 200, {"ok": True, "count": len(products)})
-        except ValueError as exc:
-            return json_response(self, 400, {"error": str(exc)})
-
     def handle_image_upload(self):
         try:
             content_type = self.headers.get("Content-Type", "")
@@ -1095,13 +1574,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
         except Exception:
             logger.exception("Image upload failed")
             return json_response(self, 500, {"error": "Image upload failed. Please try again."})
-
-    def handle_products_reset(self):
-        with connect() as conn:
-            conn.execute("DELETE FROM products")
-            seed_products(conn)
-            conn.commit()
-        return json_response(self, 200, {"ok": True})
 
     def handle_settings_get(self):
         with connect() as conn:
@@ -1151,7 +1623,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
                     "orderNo": order["order_no"],
                     "country": order["country"],
                     "productTotal": order["product_total"],
-                    "totalWeight": order["total_weight"],
+                    "shippingWeight": order["shipping_weight"],
                     "shipping": order["shipping"],
                     "total": order["total"],
                 },

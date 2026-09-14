@@ -1,0 +1,36 @@
+[Unit]
+Description=Luxe Trade Catalog
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=luxe
+Group=luxe
+WorkingDirectory=/opt/luxe-catalog
+EnvironmentFile=-/etc/luxe-catalog.env
+ExecStart=/opt/luxe-catalog/.venv/bin/python /opt/luxe-catalog/server.py
+Restart=always
+RestartSec=3
+TimeoutStartSec=30
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/var/lib/luxe-catalog
+LimitNOFILE=65535
+MemoryMax=1536M
+TasksMax=256
+
+[Install]
+WantedBy=multi-user.target

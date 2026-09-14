@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly BACKUP_DIR="/var/backups/luxe-catalog"
+readonly STAMP="$(date +%Y%m%d-%H%M%S)"
+readonly WORK_DIR="$(mktemp -d /var/tmp/luxe-backup.XXXXXX)"
+readonly ARCHIVE="${BACKUP_DIR}/luxe-catalog-${STAMP}.tar"
+
+trap 'rm -rf "$WORK_DIR"' EXIT
+install -d -o root -g root -m 0700 "$BACKUP_DIR"
+
+python3 - "$WORK_DIR/catalog.sqlite3" <<'PY'
+import sqlite3
+import sys
+
+source = sqlite3.connect("/var/lib/luxe-catalog/catalog.sqlite3")
+target = sqlite3.connect(sys.argv[1])
+with target:
+    source.backup(target)
+integrity = target.execute("PRAGMA integrity_check").fetchone()[0]
+if integrity != "ok":
+    raise SystemExit(f"Backup database failed integrity check: {integrity}")
+target.close()
+source.close()
+PY
+
+tar -cf "${ARCHIVE}.tmp" \
+    --exclude="opt/luxe-catalog/.venv" \
+    --exclude="opt/luxe-catalog/__pycache__" \
+    --exclude="opt/luxe-catalog/scripts/__pycache__" \
+    -C / \
+    opt/luxe-catalog \
+    var/lib/luxe-catalog/uploads \
+    etc/luxe-catalog.env \
+    etc/systemd/system/luxe-catalog.service \
+    etc/systemd/system/luxe-replication.service \
+    etc/systemd/system/luxe-replication.timer \
+    etc/nginx/conf.d/luxe-catalog.conf \
+    etc/nginx/conf.d/00-luxe-tuning.conf \
+    etc/nginx/snippets/luxe-security-headers.conf \
+    etc/nginx/ssl/bebeauty.top \
+    etc/fail2ban/jail.d/sshd.local \
+    etc/fail2ban/jail.d/nginx-security.local \
+    usr/local/sbin/luxe-sync-to-alibaba \
+    -C "$WORK_DIR" catalog.sqlite3
+
+tar -tf "${ARCHIVE}.tmp" >/dev/null
+mv -f "${ARCHIVE}.tmp" "$ARCHIVE"
+chmod 0600 "$ARCHIVE"
+
+mapfile -t old_backups < <(
+    find "$BACKUP_DIR" -maxdepth 1 -type f -name "luxe-catalog-*.tar" \
+        -printf "%T@ %p\n" | sort -nr | tail -n +4 | cut -d" " -f2-
+)
+for old_backup in "${old_backups[@]}"; do
+    [[ "$old_backup" == "$BACKUP_DIR/"* ]] || exit 1
+    rm -f -- "$old_backup"
+done
+
+echo "$ARCHIVE"
