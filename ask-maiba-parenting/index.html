@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#F6F2EA" />
+  <meta name="description" content="问问麦爸育儿：基于公开循证育儿资料的轻量 H5 育儿问答助手。" />
+  <title>问问麦爸育儿</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="avatar" aria-hidden="true">麦</div>
+        <div>
+          <div class="brand-line"><strong>问问麦爸育儿</strong><span class="badge">MVP</span></div>
+          <div class="subtitle">先理解孩子，再解决问题</div>
+        </div>
+      </div>
+      <button id="clearBtn" class="ghost-btn" type="button">清空</button>
+    </header>
+
+    <main>
+      <section class="hero card">
+        <p class="eyebrow">循证知识库 · 场景化建议</p>
+        <h1>把此刻最困扰你的育儿问题，告诉我。</h1>
+        <p class="hero-copy">我会先帮你判断孩子可能卡在哪里，再给出当下能做的动作和可直接开口的话。</p>
+        <div class="age-row" role="group" aria-label="孩子年龄">
+          <span>孩子年龄</span>
+          <button class="age-chip active" data-age="all">不限定</button>
+          <button class="age-chip" data-age="0-5">0–5 岁</button>
+          <button class="age-chip" data-age="6-10">6–10 岁</button>
+          <button class="age-chip" data-age="11-17">11–17 岁</button>
+        </div>
+      </section>
+
+      <section class="quick card">
+        <div class="section-title"><span>常见问题</span><small>点一下直接问</small></div>
+        <div class="chips" id="quickChips"></div>
+      </section>
+
+      <section class="chat card" aria-live="polite">
+        <div id="messages" class="messages"></div>
+      </section>
+    </main>
+
+    <form id="composer" class="composer">
+      <div class="input-wrap">
+        <textarea id="questionInput" rows="1" maxlength="500" placeholder="例如：孩子一写作业就拖延，我一催就发火，怎么办？"></textarea>
+        <button id="sendBtn" class="send-btn" type="submit" aria-label="发送">发送</button>
+      </div>
+      <div class="composer-note">基础版使用公开育儿知识库，本页不上传或保存你的聊天到服务器。</div>
+    </form>
+  </div>
+
+  <template id="welcomeTemplate">
+    <article class="message assistant">
+      <div class="message-avatar">麦</div>
+      <div class="bubble">
+        <p><strong>你好，我是「问问麦爸育儿」基础版。</strong></p>
+        <p>你不用把问题描述得很专业，直接说真实场景就行。比如“孩子输了比赛就哭”“每天为手机吵架”“青春期不愿跟我说话”。</p>
+      </div>
+    </article>
+  </template>
+
+  <script src="./knowledge.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
