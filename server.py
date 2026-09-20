@@ -1329,7 +1329,7 @@ def build_sales_report_workbook(rows):
             ]
         )
         ws.row_dimensions[row_number].height = 76
-        image_path = local_image_path(item["image"])
+        image_path = make_thumbnail(item["image"], 96)
         if image_path:
             try:
                 image = XLImage(str(image_path))
