@@ -99,9 +99,11 @@ easier.
   catalog export, reset-from-Excel, or bulk replacement endpoints/UI.
 - Order Excel download must remain available to authenticated administrators.
 - The admin sales report shows the top 20 products by cumulative quantity in
-  submitted orders and supports an authenticated Excel export. This is demand
-  data, not verified paid-sales data; keep the report read-only and do not
-  change the order schema when extending it.
+  submitted orders and supports an authenticated all-products Excel export.
+  The export includes unsold products with zero values and keeps `Units Sold`
+  as its final column so the merchant can sort the full catalog to find the
+  top 20. This is demand data, not verified paid-sales data; keep the report
+  read-only and do not change the order schema when extending it.
 - Creating an order stores its items in SQLite and sends only the order number
   through WhatsApp.
 - Product deletion means archive. Never physically delete the database row from

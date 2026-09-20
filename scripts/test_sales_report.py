@@ -1,4 +1,5 @@
 import io
+import io
 import json
 import sqlite3
 import unittest
@@ -29,7 +30,8 @@ class SalesReportTests(unittest.TestCase):
             );
             INSERT INTO products VALUES
                 ('p1', 'SKU-1', 'Brand A', 'Product A', 3.5, '', 1, 0),
-                ('p2', 'SKU-2', 'Brand B', 'Product B', 5.0, '', 1, 0);
+                ('p2', 'SKU-2', 'Brand B', 'Product B', 5.0, '', 1, 0),
+                ('p3', 'SKU-3', 'Brand C', 'Unsold product', 8.0, '', 1, 0);
             """
         )
         self.db.executemany(
@@ -60,18 +62,23 @@ class SalesReportTests(unittest.TestCase):
         self.assertEqual(rows[1]["units_sold"], 5)
         self.assertEqual(rows[1]["order_count"], 2)
         self.assertEqual(rows[1]["revenue"], 19.0)
+        all_rows = server.sales_report_rows(self.db, None, include_zero=True)
+        self.assertEqual([row["id"] for row in all_rows], ["p2", "p1", "p3"])
+        self.assertEqual(all_rows[2]["units_sold"], 0)
 
     def test_report_workbook_has_expected_sheet_and_font(self):
-        rows = server.sales_report_rows(self.db)
+        rows = server.sales_report_rows(self.db, None, include_zero=True)
         workbook_data = server.build_sales_report_workbook(rows)
         self.assertGreater(len(workbook_data), 0)
         from openpyxl import load_workbook
 
         workbook = load_workbook(io.BytesIO(workbook_data), read_only=False)
-        sheet = workbook["Top 20"]
-        self.assertEqual(sheet["A1"].value, "Top 20 Best-Selling Products")
-        self.assertEqual(sheet["F6"].value, 9)
-        self.assertEqual(sheet["H6"].value, 45)
+        sheet = workbook["All Products"]
+        self.assertEqual(sheet["A1"].value, "All Products Sales Statistics")
+        self.assertEqual(sheet["J6"].value, 9)
+        self.assertEqual(sheet["I6"].value, 45)
+        self.assertEqual(sheet["J8"].value, 0)
+        self.assertEqual(sheet["J5"].value, "Units Sold")
         self.assertEqual(sheet["A1"].font.name, "Arial")
         self.assertEqual(sheet["H6"].font.name, "Arial")
 

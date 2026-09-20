@@ -551,10 +551,13 @@ def best_seller_ids(conn):
     return {row["id"] for row in rows}
 
 
-def sales_report_rows(conn, limit=20):
-    """Return submitted-order demand totals for the top products."""
+def sales_report_rows(conn, limit=20, include_zero=False):
+    """Return submitted-order demand totals, optionally including unsold products."""
+    limit_sql = "" if limit is None else "LIMIT ?"
+    params = () if limit is None else (max(1, min(10000, int(limit))),)
+    join_sql = "LEFT JOIN" if include_zero else "JOIN"
     rows = conn.execute(
-        """
+        f"""
         WITH order_lines AS (
             SELECT
                 o.order_no,
@@ -565,29 +568,41 @@ def sales_report_rows(conn, limit=20):
             FROM orders o
             JOIN json_each(CASE WHEN json_valid(o.items_json) THEN o.items_json ELSE '[]' END) item
         )
+        ,sales AS (
+            SELECT
+                product_id,
+                SUM(qty) AS units_sold,
+                COUNT(DISTINCT order_no) AS order_count,
+                SUM(qty * CASE
+                    WHEN order_lines.unit_price > 0 THEN order_lines.unit_price
+                    ELSE p.price
+                END) AS revenue,
+                MAX(created_at) AS last_order_at
+            FROM order_lines
+            JOIN products p ON p.id = order_lines.product_id
+            WHERE qty > 0
+            GROUP BY product_id
+        )
         SELECT
             p.id,
             p.sku,
             p.brand,
             p.name,
             p.image,
-            SUM(order_lines.qty) AS units_sold,
-            COUNT(DISTINCT order_lines.order_no) AS order_count,
-            SUM(order_lines.qty * CASE
-                WHEN order_lines.unit_price > 0 THEN order_lines.unit_price
-                ELSE p.price
-            END) AS revenue,
-            MAX(order_lines.created_at) AS last_order_at,
+            p.price,
+            COALESCE(sales.units_sold, 0) AS units_sold,
+            COALESCE(sales.order_count, 0) AS order_count,
+            COALESCE(sales.revenue, 0) AS revenue,
+            COALESCE(sales.last_order_at, 0) AS last_order_at,
             p.published,
             p.archived_at
-        FROM order_lines
-        JOIN products p ON p.id = order_lines.product_id
-        WHERE order_lines.qty > 0
+        FROM products p
+        {join_sql} sales ON sales.product_id = p.id
         GROUP BY p.id
         ORDER BY units_sold DESC, revenue DESC, p.id ASC
-        LIMIT ?
+        {limit_sql}
         """,
-        (max(1, min(100, int(limit))),),
+        params,
     ).fetchall()
     return [
         {
@@ -596,6 +611,7 @@ def sales_report_rows(conn, limit=20):
             "brand": row["brand"],
             "name": row["name"],
             "image": row["image"],
+            "price": round(float(row["price"] or 0), 2),
             "units_sold": int(row["units_sold"] or 0),
             "order_count": int(row["order_count"] or 0),
             "revenue": round(float(row["revenue"] or 0), 2),
@@ -1262,31 +1278,31 @@ def build_sales_report_workbook(rows):
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Top 20"
+    ws.title = "All Products"
     default_font = Font(name="Arial", size=11, family=2)
     wb._fonts[0] = default_font
     wb._named_styles["Normal"].font = default_font
 
     ws.merge_cells("A1:J1")
-    ws["A1"] = "Top 20 Best-Selling Products"
+    ws["A1"] = "All Products Sales Statistics"
     ws["A1"].font = Font(name="Arial", family=2, size=16, bold=True)
-    ws["A2"] = "Ranked by cumulative quantity in submitted customer orders."
+    ws["A2"] = "All catalog products, ranked by cumulative quantity in submitted customer orders. Sort Units Sold to find the top 20."
     ws["A2"].font = Font(name="Arial", family=2, italic=True, color="6B5E55")
     ws["A3"] = "Generated at"
     ws["B3"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now()))
     ws["A3"].font = Font(name="Arial", family=2, bold=True)
 
     headers = [
-        "Rank",
+        "Sales Rank",
         "SKU",
         "Brand",
         "Item Name",
         "Picture",
-        "Units Sold",
+        "Price (USD)",
+        "Status",
         "Order Count",
         "Sales Revenue (USD)",
-        "Last Order",
-        "Status",
+        "Units Sold",
     ]
     header_row = 5
     for column, value in enumerate(headers, 1):
@@ -1305,13 +1321,11 @@ def build_sales_report_workbook(rows):
                 item["brand"],
                 item["name"],
                 "",
-                item["units_sold"],
+                item["price"],
+                status,
                 item["order_count"],
                 item["revenue"],
-                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(item["last_order_at"]))
-                if item["last_order_at"]
-                else "",
-                status,
+                item["units_sold"],
             ]
         )
         ws.row_dimensions[row_number].height = 76
@@ -1330,25 +1344,25 @@ def build_sales_report_workbook(rows):
 
     data_end_row = max(header_row + 1, header_row + len(rows))
     totals_row = header_row + len(rows) + 2
-    ws.cell(totals_row, 7, "Top 20 total")
-    ws.cell(totals_row, 7).font = Font(name="Arial", family=2, bold=True)
-    ws.cell(totals_row, 8, f"=SUM(H{header_row + 1}:H{data_end_row})")
-    ws.cell(totals_row, 8).number_format = "$0.00"
+    ws.cell(totals_row, 8, "All products total")
     ws.cell(totals_row, 8).font = Font(name="Arial", family=2, bold=True)
-    ws.cell(totals_row, 6, f"=SUM(F{header_row + 1}:F{data_end_row})")
-    ws.cell(totals_row, 6).font = Font(name="Arial", family=2, bold=True)
+    ws.cell(totals_row, 9, f"=SUM(I{header_row + 1}:I{data_end_row})")
+    ws.cell(totals_row, 9).number_format = "$0.00"
+    ws.cell(totals_row, 9).font = Font(name="Arial", family=2, bold=True)
+    ws.cell(totals_row, 10, f"=SUM(J{header_row + 1}:J{data_end_row})")
+    ws.cell(totals_row, 10).font = Font(name="Arial", family=2, bold=True)
 
     widths = {
-        "A": 9,
+        "A": 12,
         "B": 20,
         "C": 18,
         "D": 52,
         "E": 14,
         "F": 14,
-        "G": 14,
-        "H": 20,
-        "I": 21,
-        "J": 12,
+        "G": 12,
+        "H": 14,
+        "I": 20,
+        "J": 14,
     }
     for column, width in widths.items():
         ws.column_dimensions[column].width = width
@@ -1362,9 +1376,10 @@ def build_sales_report_workbook(rows):
             font.charset = None
             cell.font = font
     for row in range(header_row + 1, header_row + len(rows) + 1):
-        ws[f"F{row}"].number_format = "#,##0"
-        ws[f"G{row}"].number_format = "#,##0"
-        ws[f"H{row}"].number_format = "$0.00"
+        ws[f"F{row}"].number_format = "$0.00"
+        ws[f"H{row}"].number_format = "#,##0"
+        ws[f"I{row}"].number_format = "$0.00"
+        ws[f"J{row}"].number_format = "#,##0"
     ws.freeze_panes = "A6"
     ws.auto_filter.ref = f"A{header_row}:J{header_row + max(len(rows), 1)}"
     wb.calculation.fullCalcOnLoad = True
@@ -1788,9 +1803,9 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
     def handle_sales_report_download(self):
         try:
             with connect() as conn:
-                rows = sales_report_rows(conn, 20)
+                rows = sales_report_rows(conn, None, include_zero=True)
             workbook_data = build_sales_report_workbook(rows)
-            filename = f"sales-report-top-20-{time.strftime('%Y%m%d', time.localtime())}.xlsx"
+            filename = f"sales-report-all-products-{time.strftime('%Y%m%d', time.localtime())}.xlsx"
             return binary_response(
                 self,
                 200,

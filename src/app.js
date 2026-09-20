@@ -882,7 +882,7 @@
             <div><h3>Top 20 best-selling products</h3><p class="small">Ranked by quantity in submitted orders.</p></div>
             <div class="sales-report-actions">
               <button class="ghost" type="button" data-sales-refresh>Refresh statistics</button>
-              <a class="primary" href="/api/admin/sales-report/excel">Export report</a>
+              <a class="primary" href="/api/admin/sales-report/excel">Export all products</a>
             </div>
           </div>
           ${salesReportHTML()}
