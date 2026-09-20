@@ -65,9 +65,11 @@ class SalesReportTests(unittest.TestCase):
         all_rows = server.sales_report_rows(self.db, None, include_zero=True)
         self.assertEqual([row["id"] for row in all_rows], ["p2", "p1", "p3"])
         self.assertEqual(all_rows[2]["units_sold"], 0)
+        brand_rows = server.sales_report_rows(self.db, None, include_zero=True, sort_by_brand=True)
+        self.assertEqual([row["id"] for row in brand_rows], ["p1", "p2", "p3"])
 
     def test_report_workbook_has_expected_sheet_and_font(self):
-        rows = server.sales_report_rows(self.db, None, include_zero=True)
+        rows = server.sales_report_rows(self.db, None, include_zero=True, sort_by_brand=True)
         workbook_data = server.build_sales_report_workbook(rows)
         self.assertGreater(len(workbook_data), 0)
         from openpyxl import load_workbook
@@ -75,8 +77,8 @@ class SalesReportTests(unittest.TestCase):
         workbook = load_workbook(io.BytesIO(workbook_data), read_only=False)
         sheet = workbook["All Products"]
         self.assertEqual(sheet["A1"].value, "All Products Sales Statistics")
-        self.assertEqual(sheet["J6"].value, 9)
-        self.assertEqual(sheet["I6"].value, 45)
+        self.assertEqual(sheet["J6"].value, 5)
+        self.assertEqual(sheet["I6"].value, 19)
         self.assertEqual(sheet["J8"].value, 0)
         self.assertEqual(sheet["J5"].value, "Units Sold")
         self.assertEqual(sheet["A1"].font.name, "Arial")

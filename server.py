@@ -551,11 +551,17 @@ def best_seller_ids(conn):
     return {row["id"] for row in rows}
 
 
-def sales_report_rows(conn, limit=20, include_zero=False):
+def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False):
     """Return submitted-order demand totals, optionally including unsold products."""
     limit_sql = "" if limit is None else "LIMIT ?"
     params = () if limit is None else (max(1, min(10000, int(limit))),)
     join_sql = "LEFT JOIN" if include_zero else "JOIN"
+    order_sql = (
+        "ORDER BY p.brand COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC, "
+        "p.sku COLLATE NOCASE ASC, p.id ASC"
+        if sort_by_brand
+        else "ORDER BY units_sold DESC, revenue DESC, p.id ASC"
+    )
     rows = conn.execute(
         f"""
         WITH order_lines AS (
@@ -599,12 +605,12 @@ def sales_report_rows(conn, limit=20, include_zero=False):
         FROM products p
         {join_sql} sales ON sales.product_id = p.id
         GROUP BY p.id
-        ORDER BY units_sold DESC, revenue DESC, p.id ASC
+        {order_sql}
         {limit_sql}
         """,
         params,
     ).fetchall()
-    return [
+    result = [
         {
             "id": row["id"],
             "sku": row["sku"],
@@ -621,6 +627,11 @@ def sales_report_rows(conn, limit=20, include_zero=False):
         }
         for row in rows
     ]
+    ranked = sorted(result, key=lambda item: (-item["units_sold"], -item["revenue"], item["id"]))
+    sales_rank = {item["id"]: rank for rank, item in enumerate(ranked, 1)}
+    for item in result:
+        item["sales_rank"] = sales_rank[item["id"]]
+    return result
 
 
 def seed_products(conn):
@@ -1311,12 +1322,12 @@ def build_sales_report_workbook(rows):
         cell.font = Font(name="Arial", family=2, color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    for rank, item in enumerate(rows, 1):
-        row_number = header_row + rank
+    for position, item in enumerate(rows, 1):
+        row_number = header_row + position
         status = "Archived" if item["archived_at"] else ("Published" if item["published"] else "Draft")
         ws.append(
             [
-                rank,
+                item.get("sales_rank", position),
                 item["sku"],
                 item["brand"],
                 item["name"],
@@ -1803,7 +1814,7 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
     def handle_sales_report_download(self):
         try:
             with connect() as conn:
-                rows = sales_report_rows(conn, None, include_zero=True)
+                rows = sales_report_rows(conn, None, include_zero=True, sort_by_brand=True)
             workbook_data = build_sales_report_workbook(rows)
             filename = f"sales-report-all-products-{time.strftime('%Y%m%d', time.localtime())}.xlsx"
             return binary_response(
