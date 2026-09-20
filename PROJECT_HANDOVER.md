@@ -37,7 +37,7 @@
 | GitHub 仓库 | `xie666888/mandy_fisrt_website` |
 | GitHub SSH | `git@github.com:xie666888/mandy_fisrt_website.git` |
 | 当前主要工作分支 | `codex/tencent-primary-replication` |
-| 最近一次已推送提交 | `7ff2bd1 Fix admin shade persistence and order total formula` |
+| 最近一次本地提交 | `736397e Add admin top 20 sales report`（GitHub 推送待网络重试） |
 
 注意：
 
@@ -510,4 +510,3 @@ PY"
 ```
 
 然后按本文件第 16-19 节执行。
-

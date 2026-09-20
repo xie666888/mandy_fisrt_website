@@ -40,6 +40,10 @@
     adminStatus: "",
     adminSearch: "",
     adminPage: 1,
+    salesReport: null,
+    salesReportLoading: false,
+    salesReportError: "",
+    salesReportRequested: false,
     loading: true,
   };
 
@@ -192,6 +196,22 @@
   async function refreshProducts() {
     const payload = await apiFetch(`/api/products?include_drafts=${isAdminAuthed ? "1" : "0"}`);
     products = (payload.products || []).map(normalizeProduct);
+  }
+
+  async function loadSalesReport() {
+    if (!isAdminAuthed || state.salesReportLoading || state.salesReportRequested) return;
+    state.salesReportRequested = true;
+    state.salesReportLoading = true;
+    state.salesReportError = "";
+    try {
+      state.salesReport = await apiFetch("/api/admin/sales-report");
+    } catch (error) {
+      state.salesReport = null;
+      state.salesReportError = error.message;
+    } finally {
+      state.salesReportLoading = false;
+      if (state.view === "admin" && isAdminAuthed) renderAdmin();
+    }
   }
 
   function cleanColorList(items) {
@@ -836,6 +856,7 @@
 
   function renderAdmin() {
     if (!isAdminAuthed) return renderAdminLogin();
+    if (!state.salesReportRequested) window.setTimeout(loadSalesReport, 0);
     const editing = products.find((p) => p.id === state.editingId) || null;
     const p = editing || { sku: "", brand: "", name: "", category: "Cosmetics", price: "", stock: "", weight: "", description: "", colors: [], image: "", images: [], published: true };
     const adminProducts = filteredAdminProducts();
@@ -855,6 +876,16 @@
             ${field("Order No.", `<input name="orderNo" placeholder="DL202606110930001A2B" required>`)}
             <button class="primary" type="submit">Download order Excel</button>
           </form>
+        </section>
+        <section class="panel sales-report-panel">
+          <div class="sales-report-head">
+            <div><h3>Top 20 best-selling products</h3><p class="small">Ranked by quantity in submitted orders.</p></div>
+            <div class="sales-report-actions">
+              <button class="ghost" type="button" data-sales-refresh>Refresh statistics</button>
+              <a class="primary" href="/api/admin/sales-report/excel">Export report</a>
+            </div>
+          </div>
+          ${salesReportHTML()}
         </section>
         <div class="admin-grid">
           <form class="panel form-stack" data-admin-form novalidate>
@@ -1077,6 +1108,57 @@
       </main>`);
   }
 
+  function salesReportDate(timestamp) {
+    if (!timestamp) return "No orders";
+    return new Date(Number(timestamp) * 1000).toLocaleString("en-GB", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function salesReportHTML() {
+    const report = state.salesReport;
+    if (state.salesReportLoading) {
+      return `<div class="notice">Loading sales statistics...</div>`;
+    }
+    if (state.salesReportError) {
+      return `<div class="notice">${escapeHTML(state.salesReportError)}</div>`;
+    }
+    if (!report) return `<div class="notice">Sales statistics are not loaded yet.</div>`;
+    const rows = report.rows || [];
+    if (!rows.length) return `<div class="empty">No submitted order data yet.</div>`;
+    return `
+      <div class="sales-report-summary">
+        <span>Top 20 units: <strong>${Number(report.total_units || 0).toLocaleString()}</strong></span>
+        <span>Top 20 revenue: <strong>${money(report.total_revenue)}</strong></span>
+        <span>Based on submitted orders</span>
+      </div>
+      <div class="sales-report-table-wrap">
+        <table class="sales-report-table">
+          <thead><tr><th>Rank</th><th>Product</th><th>Units sold</th><th>Orders</th><th>Revenue</th><th>Last order</th></tr></thead>
+          <tbody>
+            ${rows.map((row, index) => `
+              <tr>
+                <td class="sales-rank">${index + 1}</td>
+                <td>
+                  <div class="sales-product-cell">
+                    <div class="sales-report-thumb">${row.image ? `<img src="${escapeHTML(adminThumbSrc(row.image))}" alt="${escapeHTML(row.name)}" loading="lazy" decoding="async">` : escapeHTML(String(row.brand || "").slice(0, 2))}</div>
+                    <div><strong>${escapeHTML(row.name)}</strong><span>${escapeHTML(row.sku)} · ${escapeHTML(row.brand)}</span></div>
+                  </div>
+                </td>
+                <td><strong>${Number(row.units_sold || 0).toLocaleString()}</strong></td>
+                <td>${Number(row.order_count || 0).toLocaleString()}</td>
+                <td>${money(row.revenue)}</td>
+                <td>${escapeHTML(salesReportDate(row.last_order_at))}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
   function adminRow(p) {
     return `
       <div class="admin-row">
@@ -1173,6 +1255,15 @@
       renderAdmin();
       return;
     }
+    if (target.dataset.salesRefresh !== undefined) {
+      if (!isAdminAuthed) return renderAdminLogin();
+      state.salesReportRequested = false;
+      state.salesReport = null;
+      state.salesReportError = "";
+      renderAdmin();
+      loadSalesReport();
+      return;
+    }
     if (target.dataset.scroll) document.getElementById(target.dataset.scroll)?.scrollIntoView({ behavior: "smooth" });
     if (target.dataset.detail) {
       event.preventDefault();
@@ -1255,6 +1346,9 @@
       isAdminAuthed = false;
       state.editingId = null;
       state.adminStatus = "";
+      state.salesReport = null;
+      state.salesReportError = "";
+      state.salesReportRequested = false;
       render();
     }
     if (target.dataset.edit) {
