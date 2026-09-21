@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule Tencent-to-Alibaba Luxe Catalog replication
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=60
+Persistent=true
+Unit=luxe-replication.service
+
+[Install]
+WantedBy=timers.target

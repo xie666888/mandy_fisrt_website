@@ -1,0 +1,14 @@
+[Unit]
+Description=Replicate Luxe Catalog from Tencent to Alibaba
+After=network-online.target luxe-catalog.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/luxe-sync-to-alibaba
+TimeoutStartSec=1h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true
