@@ -551,6 +551,18 @@ def best_seller_ids(conn):
     return {row["id"] for row in rows}
 
 
+def is_new_arrival(product, current_time=None):
+    """A public product is new when it was published or edited in 30 days."""
+    if not product.get("published") or int(product.get("archived_at") or 0):
+        return False
+    current = int(now() if current_time is None else current_time)
+    cutoff = current - 30 * 86400
+    return any(
+        cutoff <= int(product.get(field) or 0) <= current
+        for field in ("first_published_at", "updated_at")
+    )
+
+
 def sales_report_rows(conn, limit=20, include_zero=False, sort_by_brand=False):
     """Return submitted-order demand totals, optionally including unsold products."""
     limit_sql = "" if limit is None else "LIMIT ?"
@@ -1728,10 +1740,10 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
         with connect() as conn:
             rows = conn.execute(f"SELECT * FROM products {where} ORDER BY sort_order ASC, brand, name").fetchall()
             best_sellers = best_seller_ids(conn)
-        cutoff = now() - 30 * 86400
+        current_time = now()
         products = [product_from_row(row) for row in rows]
         for product in products:
-            product["is_new_arrival"] = cutoff <= product["first_published_at"] <= now()
+            product["is_new_arrival"] = is_new_arrival(product, current_time)
             product["is_best_seller"] = product["id"] in best_sellers
         return json_response(self, 200, {"products": products})
 

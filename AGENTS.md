@@ -127,10 +127,12 @@ easier.
 
 ## 7. Storefront Behaviour
 
-- NEW ARRIVALS filters the last 30 days by server-owned first_published_at.
-  Edits and republication must preserve the first publication timestamp.
-  Legacy published/archived products use -1 (unknown), drafts use 0; never
-  backfill from updated_at. Unknown historical dates are excluded from new arrivals.
+- NEW ARRIVALS includes public, non-archived products first published or edited
+  within the last 30 days. Edits and republication must preserve the first
+  publication timestamp, while `updated_at` records recent product changes such
+  as adding shade options or images. Legacy products with unknown publication
+  dates can still enter NEW ARRIVALS when they are actually edited; drafts and
+  archived products remain excluded.
 - Best seller marks up to 10 public, non-archived products by cumulative quantity
   in submitted orders, grouped by stable product ID. These are demand orders,
   not verified paid sales. Ties use product ID; zero-order products are excluded.

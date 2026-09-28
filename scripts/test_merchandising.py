@@ -42,6 +42,16 @@ class MerchandisingTests(unittest.TestCase):
         server.upsert_product(self.db, self.product("a"))
         self.assertEqual(self.db.execute("SELECT first_published_at FROM products").fetchone()[0], -1)
 
+    def test_new_arrivals_include_recent_edits_but_not_drafts_or_archived(self):
+        current = 1_000_000
+        recent = current - 2 * 86400
+        old = current - 31 * 86400
+        self.assertTrue(server.is_new_arrival({"published": True, "archived_at": 0, "first_published_at": -1, "updated_at": recent}, current))
+        self.assertTrue(server.is_new_arrival({"published": True, "archived_at": 0, "first_published_at": old, "updated_at": recent}, current))
+        self.assertFalse(server.is_new_arrival({"published": False, "archived_at": 0, "first_published_at": recent, "updated_at": recent}, current))
+        self.assertFalse(server.is_new_arrival({"published": True, "archived_at": 1, "first_published_at": recent, "updated_at": recent}, current))
+        self.assertFalse(server.is_new_arrival({"published": True, "archived_at": 0, "first_published_at": old, "updated_at": old}, current))
+
     def test_top_ten_aggregates_shades_by_id_and_excludes_inactive(self):
         for index in range(12):
             server.upsert_product(self.db, self.product(str(index)))
