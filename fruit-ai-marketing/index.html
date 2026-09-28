@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#153f2e" />
+  <title>鲜果AI营销中台｜供应链演示版</title>
+  <style>
+    :root{--bg:#f5f7f2;--panel:#fff;--ink:#173126;--muted:#6c7e74;--line:#dfe8e1;--green:#1f7a52;--green2:#2ca86f;--lime:#dfff8f;--orange:#ff8a3d;--yellow:#ffd45f;--shadow:0 14px 38px rgba(23,49,38,.10);--radius:22px}
+    *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:linear-gradient(180deg,#eef7ef 0,#f7f8f5 35%,#f3f5f2 100%);color:var(--ink)}
+    button,input,textarea,select{font:inherit}.app{min-height:100vh}.topbar{position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);background:rgba(247,249,246,.88);border-bottom:1px solid rgba(223,232,225,.9)}
+    .topin{max-width:1220px;margin:auto;height:70px;display:flex;align-items:center;justify-content:space-between;padding:0 22px}.brand{display:flex;align-items:center;gap:12px;font-weight:900}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,#155e3e,#2db673);display:grid;place-items:center;box-shadow:0 8px 20px rgba(31,122,82,.25);font-size:23px}.brand small{display:block;font-weight:600;color:var(--muted);font-size:11px;margin-top:2px}.badge{padding:8px 12px;border:1px solid #cfe4d5;border-radius:999px;background:#fff;color:var(--green);font-size:12px;font-weight:800}
+    .shell{max-width:1220px;margin:0 auto;padding:24px 22px 90px;display:grid;grid-template-columns:220px 1fr;gap:22px}.nav{position:sticky;top:94px;height:max-content;background:rgba(255,255,255,.74);border:1px solid #e0e9e2;border-radius:20px;padding:12px;box-shadow:var(--shadow)}.nav button{width:100%;border:0;background:transparent;text-align:left;padding:12px 14px;border-radius:14px;margin:3px 0;color:#486157;cursor:pointer;font-weight:750}.nav button.active{background:#e9f7ee;color:#176c48}.nav .sep{height:1px;background:#e8eee9;margin:10px 4px}.nav .mini{font-size:12px;color:var(--muted);padding:8px 10px;line-height:1.6}
+    .main{min-width:0}.hero{background:linear-gradient(135deg,#123d2b 0%,#1e704b 64%,#46aa71 100%);color:white;border-radius:28px;padding:30px;display:grid;grid-template-columns:1.3fr .7fr;gap:18px;box-shadow:0 18px 55px rgba(18,61,43,.20);overflow:hidden;position:relative}.hero:after{content:"";position:absolute;width:260px;height:260px;right:-80px;top:-100px;background:radial-gradient(circle,#dfff8f55 0,#dfff8f00 68%);border-radius:50%}.hero h1{font-size:34px;margin:0 0 12px;line-height:1.2;letter-spacing:-1px}.hero p{margin:0;line-height:1.8;color:#e8f5ec;font-size:15px;max-width:720px}.hero .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}.chip{font-size:12px;padding:7px 10px;border-radius:999px;background:#ffffff18;border:1px solid #ffffff25}.hero-stat{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:center;position:relative;z-index:2}.stat{background:#ffffff13;border:1px solid #ffffff24;border-radius:18px;padding:17px}.stat b{display:block;font-size:25px}.stat span{font-size:11px;color:#dcebe1}
+    .section{margin-top:22px}.section-title{display:flex;align-items:flex-end;justify-content:space-between;margin:0 2px 12px}.section-title h2{font-size:20px;margin:0}.section-title span{font-size:12px;color:var(--muted)}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:0 10px 26px rgba(23,49,38,.06)}.metric{display:flex;align-items:center;gap:12px}.icon{width:44px;height:44px;border-radius:15px;background:#eef8f1;display:grid;place-items:center;font-size:21px}.metric b{font-size:24px}.metric small{display:block;color:var(--muted);margin-top:2px}.delta{margin-left:auto;font-size:11px;padding:5px 8px;border-radius:999px;background:#eff9f2;color:#167149;font-weight:800}
+    .workbench{display:grid;grid-template-columns:.9fr 1.1fr;gap:16px}.form-card label{font-size:12px;font-weight:800;color:#52685e;display:block;margin:13px 0 7px}.form-card input,.form-card textarea,.form-card select{width:100%;border:1px solid #dbe6dd;background:#fbfcfb;border-radius:13px;padding:12px 13px;outline:none}.form-card textarea{min-height:88px;resize:vertical}.form-card input:focus,.form-card textarea:focus,.form-card select:focus{border-color:#57b37d;box-shadow:0 0 0 3px #57b37d1c}.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.go{width:100%;border:0;border-radius:14px;background:linear-gradient(135deg,#176a47,#2dad71);color:#fff;padding:14px 16px;margin-top:16px;font-weight:900;cursor:pointer;box-shadow:0 10px 22px rgba(31,122,82,.22)}.hint{font-size:11px;color:var(--muted);line-height:1.6;margin-top:9px}
+    .output-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.output-head strong{font-size:16px}.ai-dot{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#1b7a51;background:#edf8f1;padding:6px 9px;border-radius:999px}.ai-dot:before{content:"";width:7px;height:7px;background:#31b579;border-radius:50%;box-shadow:0 0 0 5px #31b57918}.tabs{display:flex;gap:8px;overflow:auto;padding-bottom:2px}.tab{white-space:nowrap;border:1px solid #dce7df;background:#fff;color:#587066;padding:8px 11px;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer}.tab.active{background:#173f2e;color:white;border-color:#173f2e}.output-box{margin-top:12px;background:#f7faf7;border:1px dashed #cbdace;border-radius:17px;padding:16px;min-height:280px}.copy{white-space:pre-wrap;line-height:1.85;font-size:14px}.copy-actions{display:flex;gap:8px;margin-top:12px}.copy-actions button{border:1px solid #d6e2d9;background:white;border-radius:10px;padding:8px 10px;font-size:12px;cursor:pointer}
+    .poster{border-radius:18px;min-height:260px;background:linear-gradient(145deg,#ffefb1,#ffd86a 55%,#ffb45d);padding:18px;position:relative;overflow:hidden;color:#4a2f00}.poster:after{content:"🥭";font-size:126px;position:absolute;right:-8px;bottom:-18px;filter:drop-shadow(0 18px 18px #a6632760)}.poster small{font-weight:900;letter-spacing:2px}.poster h3{font-size:31px;line-height:1.08;margin:18px 0 6px;max-width:65%}.poster .price{display:inline-block;background:#4e2e08;color:white;padding:7px 11px;border-radius:10px;font-size:20px;font-weight:1000}.poster .promo{position:absolute;left:18px;bottom:18px;background:#fff8;padding:9px 12px;border-radius:12px;font-weight:900;font-size:13px}.poster .fruitname{font-size:13px;font-weight:900;color:#704e17}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.flow .n{width:28px;height:28px;border-radius:10px;background:#153f2e;color:white;display:grid;place-items:center;font-size:12px;font-weight:900;margin-bottom:10px}.flow h3{font-size:14px;margin:0 0 7px}.flow p{font-size:12px;color:var(--muted);line-height:1.65;margin:0}
+    .package{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}.pack{border:1px solid var(--line);background:#fff;border-radius:18px;padding:16px}.pack .thumb{height:120px;border-radius:14px;display:flex;align-items:end;padding:12px;font-size:30px;margin-bottom:12px;background:linear-gradient(135deg,#fff0c4,#ffc763)}.pack:nth-child(2) .thumb{background:linear-gradient(135deg,#edf7d5,#c8ef7a)}.pack:nth-child(3) .thumb{background:linear-gradient(135deg,#ffe1d7,#ffad90)}.pack h3{font-size:14px;margin:0 0 4px}.pack p{font-size:12px;color:var(--muted);margin:0 0 12px}.pack button{width:100%;border:0;background:#eff8f2;color:#167049;border-radius:10px;padding:9px;font-weight:800;cursor:pointer}
+    .stores{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.store-list{display:grid;gap:9px}.store{display:flex;align-items:center;gap:10px;border:1px solid #e3ebe5;border-radius:14px;padding:11px}.avatar{width:36px;height:36px;border-radius:12px;background:#eff8ef;display:grid;place-items:center}.store b{font-size:13px}.store small{display:block;color:var(--muted);margin-top:3px}.status{margin-left:auto;font-size:11px;background:#e9f8ef;color:#187149;padding:5px 8px;border-radius:999px}.chart{height:190px;display:flex;align-items:end;gap:8px;padding:20px 8px 4px}.bar{flex:1;background:linear-gradient(#39ae75,#9ae0b9);border-radius:9px 9px 4px 4px;min-height:15px;position:relative}.bar:after{content:attr(data-label);position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:10px;color:#6b7c72}.footer{text-align:center;color:#8a9a91;font-size:11px;margin-top:28px;line-height:1.7}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(30px);background:#153f2e;color:white;padding:11px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:50;font-size:13px;box-shadow:0 10px 30px #0003}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.mobile-nav{display:none}
+    @media(max-width:900px){.shell{grid-template-columns:1fr;padding:16px 14px 88px}.nav{display:none}.hero{grid-template-columns:1fr;padding:23px;border-radius:24px}.hero h1{font-size:28px}.hero-stat{display:none}.workbench,.stores{grid-template-columns:1fr}.grid3,.package{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}.mobile-nav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;bottom:0;left:0;right:0;background:#ffffffee;backdrop-filter:blur(12px);border-top:1px solid #dce7df;padding:8px 8px max(8px,env(safe-area-inset-bottom));z-index:30}.mobile-nav button{border:0;background:none;color:#64766d;font-size:10px;padding:4px}.mobile-nav b{display:block;font-size:18px;margin-bottom:2px}.mobile-nav button.active{color:#176e49}.topin{padding:0 15px;height:62px}.brand small{display:none}.badge{font-size:10px;padding:6px 8px}.section{margin-top:17px}.row2{grid-template-columns:1fr}.output-box{min-height:250px}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar"><div class="topin">
+    <div class="brand"><div class="logo">🍊</div><div>鲜果AI营销中台<small>供应链 · 门店 · 私域一体化</small></div></div>
+    <div class="badge">演示版 · 无需登录</div>
+  </div></header>
+
+  <div class="shell">
+    <aside class="nav">
+      <button class="active" onclick="jump('dashboard',this)">🏠 今日经营</button>
+      <button onclick="jump('assistant',this)">✨ AI营销助手</button>
+      <button onclick="jump('materials',this)">📦 今日素材包</button>
+      <button onclick="jump('stores',this)">🏪 门店分发</button>
+      <div class="sep"></div>
+      <div class="mini">把供应链每天的“到货、价格、卖点”自动变成门店能直接发的营销素材。</div>
+    </aside>
+
+    <main class="main">
+      <section class="hero" id="dashboard">
+        <div>
+          <h1>每天上新水果，<br>AI自动变成成交素材。</h1>
+          <p>供应链只需录入今日到货和活动，系统自动生成朋友圈、微信群、短视频脚本、促销海报，并一键分发给合作门店。</p>
+          <div class="chips"><span class="chip">朋友圈文案</span><span class="chip">群发话术</span><span class="chip">短视频脚本</span><span class="chip">商品海报</span><span class="chip">门店素材包</span></div>
+        </div>
+        <div class="hero-stat">
+          <div class="stat"><b>28</b><span>合作门店</span></div><div class="stat"><b>12</b><span>今日SKU</span></div><div class="stat"><b>86%</b><span>素材领取率</span></div><div class="stat"><b>4.2×</b><span>制作效率</span></div>
+        </div>
+      </section>
+
+      <section class="section"><div class="grid3">
+        <div class="card metric"><div class="icon">🥭</div><div><b>12</b><small>今日新品</small></div><div class="delta">+3</div></div>
+        <div class="card metric"><div class="icon">📣</div><div><b>36</b><small>已生成素材</small></div><div class="delta">实时</div></div>
+        <div class="card metric"><div class="icon">🏪</div><div><b>24</b><small>已领取门店</small></div><div class="delta">86%</div></div>
+      </div></section>
+
+      <section class="section" id="assistant">
+        <div class="section-title"><h2>✨ AI营销助手</h2><span>输入商品 → 一键生成整套营销内容</span></div>
+        <div class="workbench">
+          <div class="card form-card">
+            <div class="row2"><div><label>今日主推水果</label><input id="fruit" value="攀枝花凯特芒" /></div><div><label>零售价</label><input id="price" value="9.9元/斤" /></div></div>
+            <label>核心卖点</label><textarea id="selling">果香浓、肉厚核薄、自然熟甜度高，今天新鲜到货</textarea>
+            <label>今日活动</label><input id="promo" value="满59元送现切水果一份" />
+            <div class="row2"><div><label>目标客户</label><select id="aud"><option>门店零售顾客</option><option>宝妈家庭</option><option>办公室团购</option><option>社区团长</option></select></div><div><label>文案语气</label><select id="tone"><option>真实接地气</option><option>高端品质感</option><option>热闹促销型</option><option>专业供应链</option></select></div></div>
+            <button class="go" onclick="generateAll()">⚡ 一键生成今日营销素材</button>
+            <div class="hint">演示版在浏览器本地实时生成，不上传任何数据。正式版可接入企业知识库、商品库、价格表和大模型API。</div>
+          </div>
+
+          <div class="card">
+            <div class="output-head"><strong>AI生成结果</strong><span class="ai-dot">AI READY</span></div>
+            <div class="tabs">
+              <button class="tab active" onclick="showTab('moments',this)">朋友圈</button>
+              <button class="tab" onclick="showTab('group',this)">微信群</button>
+              <button class="tab" onclick="showTab('video',this)">短视频</button>
+              <button class="tab" onclick="showTab('poster',this)">促销海报</button>
+            </div>
+            <div class="output-box" id="out"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="materials">
+        <div class="section-title"><h2>📦 今日门店素材包</h2><span>总部统一生成，门店拿来即发</span></div>
+        <div class="package">
+          <div class="pack"><div class="thumb">🥭 <span style="font-size:13px;margin-left:auto;font-weight:900">爆款主推</span></div><h3>凯特芒 · 主推素材包</h3><p>海报 3 张｜朋友圈 3 条｜视频脚本 1 条</p><button onclick="toast('已模拟领取素材包')">领取整包素材</button></div>
+          <div class="pack"><div class="thumb">🍇 <span style="font-size:13px;margin-left:auto;font-weight:900">品质精选</span></div><h3>阳光玫瑰 · 品质素材包</h3><p>海报 2 张｜朋友圈 2 条｜社群话术 2 条</p><button onclick="toast('已模拟领取素材包')">领取整包素材</button></div>
+          <div class="pack"><div class="thumb">🍑 <span style="font-size:13px;margin-left:auto;font-weight:900">周末活动</span></div><h3>家庭水果组合 · 套餐包</h3><p>套餐海报 2 张｜促销文案 4 条｜团购话术</p><button onclick="toast('已模拟领取素材包')">领取整包素材</button></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-title"><h2>一条供应链，变成28家店的内容团队</h2><span>从“每天重复做图”到“总部一次生成、门店统一复用”</span></div>
+        <div class="card flow">
+          <div><div class="n">01</div><h3>录入今日到货</h3><p>商品、产地、价格、库存、卖点、促销活动一次录入。</p></div>
+          <div><div class="n">02</div><h3>AI生成整套素材</h3><p>自动产出朋友圈、社群、短视频脚本和海报视觉。</p></div>
+          <div><div class="n">03</div><h3>一键分发门店</h3><p>各合作门店收到“今日素材包”，下载或复制即可发布。</p></div>
+          <div><div class="n">04</div><h3>复盘营销数据</h3><p>查看素材领取、发布、咨询和热销商品，为次日选品提供依据。</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="stores">
+        <div class="section-title"><h2>🏪 门店分发看板</h2><span>演示数据</span></div>
+        <div class="stores">
+          <div class="card"><div class="store-list">
+            <div class="store"><div class="avatar">🏪</div><div><b>熊鲜生 · 明发店</b><small>今日领取 3 个素材包</small></div><div class="status">已发布</div></div>
+            <div class="store"><div class="avatar">🍊</div><div><b>优鲜果坊 · 仓山店</b><small>今日领取 2 个素材包</small></div><div class="status">已领取</div></div>
+            <div class="store"><div class="avatar">🍉</div><div><b>邻里鲜果 · 金山店</b><small>今日领取 3 个素材包</small></div><div class="status">已发布</div></div>
+            <div class="store"><div class="avatar">🍓</div><div><b>甜果生活 · 东街店</b><small>今日领取 1 个素材包</small></div><div class="status">待发布</div></div>
+          </div></div>
+          <div class="card"><strong style="font-size:15px">近7日素材使用趋势</strong><div class="chart">
+            <div class="bar" data-label="一" style="height:42%"></div><div class="bar" data-label="二" style="height:58%"></div><div class="bar" data-label="三" style="height:51%"></div><div class="bar" data-label="四" style="height:74%"></div><div class="bar" data-label="五" style="height:67%"></div><div class="bar" data-label="六" style="height:88%"></div><div class="bar" data-label="日" style="height:79%"></div>
+          </div></div>
+        </div>
+      </section>
+
+      <div class="footer">鲜果AI营销中台 · MVP演示版<br>可扩展：商品库 / 企业知识库 / AI生图 / 视频生成 / 门店权限 / 微信私域 / 数据分析</div>
+    </main>
+  </div>
+
+  <nav class="mobile-nav"><button class="active" onclick="jump('dashboard',this)"><b>🏠</b>经营</button><button onclick="jump('assistant',this)"><b>✨</b>AI助手</button><button onclick="jump('materials',this)"><b>📦</b>素材</button><button onclick="jump('stores',this)"><b>🏪</b>门店</button></nav>
+  <div class="toast" id="toast"></div>
+</div>
+<script>
+let current='moments',generated={};
+function v(id){return document.getElementById(id).value.trim()}
+function generateAll(){
+  const fruit=v('fruit')||'今日鲜果',price=v('price')||'今日好价',selling=v('selling')||'新鲜到货',promo=v('promo')||'到店有惊喜',aud=v('aud');
+  generated.moments='🥭 今天这批【'+fruit+'】真的可以冲！\n\n'+selling+'。\n\n今日价：'+price+'\n🎁 '+promo+'\n\n'+(aud==='宝妈家庭'?'给孩子吃水果，选新鲜的更安心。':aud==='办公室团购'?'办公室拼单也可以，凑单更划算。':'数量有限，需要的直接微信留货。')+'\n\n—— 今日鲜果，认真挑、放心吃。';
+  generated.group='🔥 今晚鲜果福利\n\n【'+fruit+'】 '+price+'\n✅ '+selling+'\n🎁 '+promo+'\n\n群里回复“1 + 数量”，直接给你留货。\n新鲜批次售完即止～';
+  generated.video='【15秒短视频口播】\n\n镜头1｜近景拍整筐水果\n“今天刚到的'+fruit+'，你们看这个状态。”\n\n镜头2｜切开/手拿展示\n“'+selling+'，今天'+price+'。”\n\n镜头3｜镜头对准活动牌\n“而且今天'+promo+'，想吃的直接私信我，给你留最新鲜的一批。”\n\n拍摄建议：自然光 + 手持近景 + 切果特写，真实感比棚拍更容易让老客下单。';
+  generated.poster={fruit,price,promo,selling};showTab(current,document.querySelector('.tab.active'));toast('已生成 4 类营销素材');
+}
+function generateSeed(){generated={moments:'🥭 今天这批【攀枝花凯特芒】真的可以冲！\n\n果香浓、肉厚核薄、自然熟甜度高，今天新鲜到货。\n\n今日价：9.9元/斤\n🎁 满59元送现切水果一份\n\n数量有限，需要的直接微信留货。',group:'🔥 今晚鲜果福利\n\n【攀枝花凯特芒】9.9元/斤\n✅ 新鲜到货，肉厚核薄\n🎁 满59元送现切水果一份\n\n群里回复“1+数量”，给你留货。',video:'【15秒短视频口播】\n\n今天刚到的凯特芒，你们看一下这个果型。\n这批果香特别明显，肉厚核薄，放软一点甜度更高。\n今天只要9块9一斤，满59还送一份现切水果。\n想吃的直接私信，我给你留最新鲜的一批。',poster:{fruit:'攀枝花凯特芒',price:'9.9元/斤',promo:'满59元送现切水果一份',selling:'果香浓 · 肉厚核薄 · 今日新鲜到货'}}}
+function showTab(type,el){current=type;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));if(el)el.classList.add('active');if(!generated.moments)generateSeed();const out=document.getElementById('out');if(type==='poster'){const p=generated.poster;out.innerHTML='<div class="poster"><small>今日鲜果 · NEW ARRIVAL</small><h3>'+esc(p.fruit)+'</h3><div class="fruitname">'+esc(p.selling)+'</div><div style="margin-top:13px" class="price">'+esc(p.price)+'</div><div class="promo">🎁 '+esc(p.promo)+'</div></div><div class="copy-actions"><button onclick="toast(\'正式版可调用AI生图生成多版海报\')">🎨 生成更多版式</button><button onclick="toast(\'已模拟保存海报\')">⬇ 保存海报</button></div>';return}out.innerHTML='<div class="copy">'+esc(generated[type])+'</div><div class="copy-actions"><button onclick="copyText()">📋 复制文案</button><button onclick="rewrite()">✨ 换一种写法</button></div>'}
+function copyText(){navigator.clipboard?.writeText(generated[current]||'').then(()=>toast('文案已复制')).catch(()=>toast('长按文案即可复制'))}
+function rewrite(){if(current==='poster')return;generated[current]+='\n\n💡 AI改写：更适合今晚 19:00—21:00 的朋友圈成交场景。';showTab(current,document.querySelector('.tab.active'));toast('已生成另一种表达')}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function jump(id,btn){document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});document.querySelectorAll('.nav button,.mobile-nav button').forEach(x=>x.classList.remove('active'));if(btn)btn.classList.add('active')}
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>e.classList.remove('show'),1800)}
+generateSeed();showTab('moments',document.querySelector('.tab'));
+</script>
+</body>
+</html>
