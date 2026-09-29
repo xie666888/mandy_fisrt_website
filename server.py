@@ -17,7 +17,7 @@ import re
 from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 
 try:
     from PIL import Image as _PILImage
@@ -51,6 +51,7 @@ HTTPS_ENABLED = os.environ.get("HTTPS", "0") == "1"
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://bebeauty.top").rstrip("/")
 
 SEO_SITE_NAME = "BeBeauty Wholesale Catalog"
+ASSET_VERSION = "20260930-search"
 SEO_HOME_DESCRIPTION = (
     "Browse wholesale cosmetics and beauty products by brand, category, SKU, "
     "shade and price. Create an order number for supplier confirmation."
@@ -118,7 +119,8 @@ def text_response(handler, status, text, content_type, cache_control="public, ma
     handler.send_header("Cache-Control", cache_control)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    if handler.command != "HEAD":
+        handler.wfile.write(body)
 
 
 def binary_response(handler, status, data, content_type, filename=None):
@@ -271,6 +273,11 @@ def absolute_media_url(value):
     return f"{PUBLIC_BASE_URL}/{quote(path, safe='/%:@?&=+$,;~.-_')}"
 
 
+def media_src(value):
+    url = absolute_media_url(value)
+    return url[len(PUBLIC_BASE_URL):] if url.startswith(PUBLIC_BASE_URL + '/') else url
+
+
 def seo_description(product):
     description = re.sub(r"\s+", " ", str(product.get("description") or "")).strip()
     identity = " ".join(
@@ -288,7 +295,7 @@ def seo_description(product):
 
 
 def seo_json(data):
-    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
 
 def build_product_page(product, related_products):
@@ -301,12 +308,13 @@ def build_product_page(product, related_products):
     image = absolute_media_url(product.get("image"))
     images = [absolute_media_url(item) for item in product.get("images") or []]
     images = [item for item in dict.fromkeys([image, *images]) if item]
-    title = f"{name} Wholesale | {brand} | BeBeauty"
+    title = f"{name} Wholesale | BeBeauty"
     price = f"{float(product.get('price') or 0):.2f}"
 
     product_schema = {
         "@context": "https://schema.org",
         "@type": "Product",
+        "@id": canonical + "#product",
         "name": name,
         "sku": sku,
         "category": category,
@@ -341,7 +349,7 @@ def build_product_page(product, related_products):
                 "@type": "ListItem",
                 "position": 2,
                 "name": brand,
-                "item": f"{PUBLIC_BASE_URL}/?brand={quote(brand)}",
+                "item": collection_url('brand', brand),
             },
             {"@type": "ListItem", "position": 3, "name": name, "item": canonical},
         ],
@@ -364,8 +372,8 @@ def build_product_page(product, related_products):
         for item in related_products
     )
     image_html = (
-        f'<img src="{html.escape(image, quote=True)}" alt="{html.escape(name, quote=True)}" '
-        'width="395" height="395" loading="eager">'
+        f'<img src="{html.escape(media_src(image), quote=True)}" alt="{html.escape(name, quote=True)}" '
+        'width="395" height="395" loading="eager" fetchpriority="high">'
         if image
         else ""
     )
@@ -388,7 +396,7 @@ def build_product_page(product, related_products):
     <meta property="og:url" content="{html.escape(canonical, quote=True)}">
     {f'<meta property="og:image" content="{html.escape(image, quote=True)}">' if image else ""}
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="/src/styles.css?v=20260911-round-button">
+    <link rel="stylesheet" href="/src/styles.css?v={ASSET_VERSION}">
     <script type="application/ld+json">{seo_json(product_schema)}</script>
     <script type="application/ld+json">{seo_json(breadcrumb_schema)}</script>
     <script type="application/ld+json">{seo_json(faq_schema)}</script>
@@ -396,7 +404,7 @@ def build_product_page(product, related_products):
   <body>
     <div id="app">
       <main class="detail seo-product">
-        <nav aria-label="Breadcrumb"><a href="/">Wholesale beauty products</a> / {html.escape(brand)}</nav>
+        <nav aria-label="Breadcrumb"><a href="/">Wholesale beauty products</a> / <a href="{html.escape(collection_url('brand', brand), quote=True)}">{html.escape(brand)}</a></nav>
         <article class="detail-layout">
           <div class="gallery"><div class="product-image">{image_html}</div></div>
           <section>
@@ -405,16 +413,126 @@ def build_product_page(product, related_products):
             <p class="price">${price}</p>
             <h2>Product information</h2>
             <p>{html.escape(str(product.get("description") or description))}</p>
+            <h2>Shade / type options</h2>
+            <ul>{''.join(f'<li>{html.escape(str(shade))}</li>' for shade in product.get('colors', []))}</ul>
             <p><a href="/#products">Browse the wholesale catalog</a></p>
           </section>
         </article>
+        {faq_html()}
         <section><h2>Related wholesale products</h2><ul>{related_html}</ul></section>
       </main>
+      {public_footer()}
     </div>
-    <script src="/src/app.js?v=20260911-merchandising"></script>
+    <script src="/src/app.js?v={ASSET_VERSION}" defer></script>
   </body>
 </html>
 """
+
+
+def collection_url(field, value):
+    return f"{PUBLIC_BASE_URL}/?{urlencode({field: value})}"
+
+
+def faq_html():
+    return '<section class="qa-panel"><h2>Ordering questions</h2><div class="qa-list">' + ''.join(
+        f'<details><summary>{html.escape(question)}</summary><p>{html.escape(answer)}</p></details>'
+        for question, answer in SEO_FAQ
+    ) + '</div></section>'
+
+
+def public_footer():
+    return ('<footer class="site-footer"><a href="/">Product catalog</a>'
+            '<a href="/ordering">Ordering &amp; delivery</a>'
+            '<a href="/sitemap.xml">Sitemap</a><span>Prices in USD. Availability confirmed by supplier.</span></footer>')
+
+
+def public_page(title, description, canonical, body, schema, *, indexable=True, app=True):
+    robots = 'index,follow,max-image-preview:large,max-snippet:-1' if indexable else 'noindex,follow'
+    script = f'<script src="/src/app.js?v={ASSET_VERSION}" defer></script>' if app else ''
+    return f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)}</title><meta name="description" content="{html.escape(description, quote=True)}">
+<meta name="robots" content="{robots}"><link rel="canonical" href="{html.escape(canonical, quote=True)}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="{SEO_SITE_NAME}">
+<meta property="og:title" content="{html.escape(title, quote=True)}"><meta property="og:description" content="{html.escape(description, quote=True)}">
+<meta property="og:url" content="{html.escape(canonical, quote=True)}"><meta name="twitter:card" content="summary">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="stylesheet" href="/src/styles.css?v={ASSET_VERSION}">
+<script type="application/ld+json">{seo_json(schema)}</script></head>
+<body><div id="app"><div class="app"><header class="topbar"><a class="brand" href="/">Luxe Trade Catalog</a>
+<nav class="nav"><a href="/">Products</a><a href="/ordering">Ordering</a><a href="/#cart">Cart</a></nav></header>
+{body}{public_footer()}</div></div>{script}</body></html>'''
+
+
+def collection_identity(query):
+    brand = query.get('brand', [''])[0]
+    category = query.get('category', [''])[0]
+    active = [(key, value) for key, value in [('brand', brand), ('category', category)] if value and value != 'All']
+    indexable = len(active) <= 1 and not any(key not in ('brand', 'category') for key in query)
+    if len(active) == 1 and indexable:
+        key, value = active[0]
+        return (f'{value} Wholesale Beauty Products',
+                f'Browse {value} wholesale beauty products, USD prices, shade options and product images. Confirm availability with the supplier before payment.',
+                collection_url(key, value), True)
+    return ('Wholesale Beauty Products', SEO_HOME_DESCRIPTION, PUBLIC_BASE_URL + '/', indexable)
+
+
+def build_catalog_page(products, query):
+    heading, description, canonical, indexable = collection_identity(query)
+    visible = products
+    for field in ('brand', 'category'):
+        value = query.get(field, [''])[0]
+        if value and value != 'All':
+            visible = [item for item in visible if item.get(field) == value]
+    search = query.get('q', [''])[0].strip().casefold()
+    if search:
+        visible = [item for item in visible if search in ' '.join(str(item.get(k) or '') for k in ('sku', 'brand', 'name', 'description')).casefold()]
+    if query.get('new', [''])[0] == '1':
+        visible = [item for item in visible if is_new_arrival(item)]
+    cards = []
+    for index, item in enumerate(visible):
+        url = html.escape(product_page_url(item['id']), quote=True)
+        name = html.escape(str(item['name']))
+        image = absolute_media_url(item.get('image'))
+        picture = (f'<img src="{html.escape(media_src(image), quote=True)}" alt="{html.escape(str(item["name"]), quote=True)}" '
+                   f'width="395" height="395" loading="{"eager" if index < 5 else "lazy"}" decoding="async">') if image else ''
+        tags = ''.join(f'<a class="tag" href="{html.escape(collection_url(key, item[key]), quote=True)}">{html.escape(str(item[key]))}</a>' for key in ('brand', 'category') if item.get(key))
+        cards.append(f'<article class="card"><a class="product-image" href="{url}">{picture}</a><div class="card-body">'
+                     f'<div class="meta">{tags}</div><h3><a class="product-title-link" href="{url}">{name}</a></h3>'
+                     f'<p class="desc">{html.escape(str(item.get("description") or ""))}</p>'
+                     f'<div class="card-signals"><span>SKU {html.escape(str(item.get("sku") or ""))}</span></div>'
+                     f'<div class="price-row"><span class="price">${item["price"]:.2f}</span><a href="{url}">View product</a></div></div></article>')
+    brands = sorted({p['brand'] for p in products if p.get('brand') and p['brand'] != 'All'}, key=str.casefold)
+    categories = sorted({p['category'] for p in products if p.get('category') and p['category'] != 'All'}, key=str.casefold)
+    rail = '<aside class="brand-rail" aria-label="Brands"><div class="brand-rail-title">Brands</div><a href="/">All</a>' + ''.join(
+        f'<a href="{html.escape(collection_url("brand", value), quote=True)}">{html.escape(value)}</a>' for value in brands) + '</aside>'
+    category_links = ''.join(f'<a href="{html.escape(collection_url("category", value), quote=True)}">{html.escape(value)}</a>' for value in categories)
+    body = (rail + '<main class="content seo-catalog"><div class="section-title compact-title">'
+            f'<div><h1>{html.escape(heading)}</h1><p>{len(visible)} matching items</p></div></div>'
+            f'<div class="grid">{"".join(cards)}</div><nav class="collection-links" aria-label="Categories">{category_links}</nav>'
+            f'{faq_html()}</main>')
+    schema = {'@context': 'https://schema.org', '@graph': [
+        {'@type': 'Organization', '@id': PUBLIC_BASE_URL + '/#organization', 'name': SEO_SITE_NAME, 'alternateName': 'Luxe Trade Catalog', 'url': PUBLIC_BASE_URL + '/'},
+        {'@type': 'WebSite', '@id': PUBLIC_BASE_URL + '/#website', 'name': SEO_SITE_NAME, 'url': PUBLIC_BASE_URL + '/', 'publisher': {'@id': PUBLIC_BASE_URL + '/#organization'}},
+        {'@type': 'CollectionPage', 'name': heading, 'url': canonical, 'description': description, 'isPartOf': {'@id': PUBLIC_BASE_URL + '/#website'},
+         'mainEntity': {'@type': 'ItemList', 'numberOfItems': len(visible), 'itemListElement': [
+             {'@type': 'ListItem', 'position': i + 1, 'url': product_page_url(p['id']), 'name': p['name']} for i, p in enumerate(visible)]}}
+    ]}
+    return public_page(heading + ' | BeBeauty', description, canonical, body, schema, indexable=indexable)
+
+
+def build_ordering_page():
+    title = 'Ordering, Payment & Delivery | BeBeauty'
+    description = 'How to create a wholesale order, confirm availability through WhatsApp, arrange payment and check shipping to Europe or the United States.'
+    body = '''<main class="ordering-page"><nav aria-label="Breadcrumb"><a href="/">Products</a> / Ordering</nav>
+<h1>Ordering, payment &amp; delivery</h1><h2>How to order</h2>
+<ol><li>Choose products, shade options and quantities.</li><li>Review the cart and select Europe or United States for shipping.</li>
+<li>Create an order number. No customer account is required.</li><li>Send the order number through WhatsApp to confirm availability and the Alibaba payment link.</li></ol>
+<h2>Prices and shipping</h2><p>Catalog prices are in USD. The cart shows shipping weight, estimated shipping cost and total for the selected destination. Final availability and payment details are confirmed by the supplier before payment.</p>
+<h2>Order documents</h2><p>The supplier can retrieve the order using its order number. Customers do not need to download or send a spreadsheet.</p>'''
+    body += faq_html() + '<p><a href="/">Browse products</a></p></main>'
+    schema = {'@context': 'https://schema.org', '@type': 'WebPage', 'name': title, 'url': PUBLIC_BASE_URL + '/ordering', 'description': description}
+    return public_page(title, description, PUBLIC_BASE_URL + '/ordering', body, schema, app=False)
 
 
 def split_color_text(value):
@@ -1441,12 +1559,30 @@ class CatalogHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/":
+            return self.handle_catalog_page(parse_qs(parsed.query, keep_blank_values=True))
+        if parsed.path in ("/index.html", "/ordering/"):
+            self.send_response(301)
+            self.send_header("Location", "/" if parsed.path == "/index.html" else "/ordering")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if parsed.path == "/ordering":
+            return text_response(self, 200, build_ordering_page(), "text/html; charset=utf-8", "no-cache")
         if parsed.path == "/robots.txt":
             return self.handle_robots()
         if parsed.path == "/sitemap.xml":
             return self.handle_sitemap()
         if parsed.path == "/llms.txt":
             return self.handle_llms()
+        if parsed.path == "/indexnow-key.txt":
+            key_file = Path('/var/lib/luxe-search/indexnow.key')
+            if not key_file.is_file():
+                return self.send_error(404)
+            key = key_file.read_text().strip()
+            if not re.fullmatch(r'[a-f0-9]{32,128}', key):
+                return self.send_error(404)
+            return text_response(self, 200, key, 'text/plain; charset=utf-8')
         if parsed.path.startswith("/product/"):
             product_id = unquote(parsed.path.removeprefix("/product/")).rstrip("/")
             return self.handle_product_page(product_id)
@@ -1469,6 +1605,15 @@ class CatalogHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/"):
             return json_response(self, 404, {"error": "Not found"})
         return self.serve_static(parsed.path)
+
+    def do_HEAD(self):
+        path = urlparse(self.path).path
+        if path in ("/", "/index.html", "/ordering", "/ordering/", "/robots.txt", "/sitemap.xml", "/llms.txt") or path.startswith("/product/"):
+            return self.do_GET()
+        self.send_response(405)
+        self.send_header("Allow", "GET")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self):
         parsed = urlparse(self.path)
@@ -1586,7 +1731,6 @@ class CatalogHandler(BaseHTTPRequestHandler):
             "Allow: /\n"
             "Disallow: /api/\n"
             f"Sitemap: {PUBLIC_BASE_URL}/sitemap.xml\n"
-            f"Host: {urlparse(PUBLIC_BASE_URL).netloc}\n"
         )
         return text_response(self, 200, content, "text/plain; charset=utf-8")
 
@@ -1594,7 +1738,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
         with connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, name, image, updated_at
+                SELECT id, name, image, images_json, brand, category, updated_at
                 FROM products
                 WHERE published = 1 AND archived_at = 0
                 ORDER BY updated_at DESC, id
@@ -1606,22 +1750,30 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 "<changefreq>daily</changefreq><priority>1.0</priority></url>"
             )
         ]
+        entries.append(f"  <url><loc>{html.escape(PUBLIC_BASE_URL + '/ordering')}</loc></url>")
+        for field in ('brand', 'category'):
+            values = sorted({row[field] for row in rows if row[field] and row[field] != 'All'})
+            for value in values:
+                changed = max(int(row['updated_at'] or 0) for row in rows if row[field] == value)
+                lastmod = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(changed)) if changed else ''
+                entries.append(f'<url><loc>{html.escape(collection_url(field, value))}</loc>' +
+                               (f'<lastmod>{lastmod}</lastmod>' if lastmod else '') + '</url>')
         for row in rows:
             updated_at = int(row["updated_at"] or 0)
-            lastmod = time.strftime("%Y-%m-%d", time.gmtime(updated_at)) if updated_at else ""
-            image = absolute_media_url(row["image"])
+            lastmod = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(updated_at)) if updated_at else ""
+            product = product_from_row(row)
+            images = list(dict.fromkeys(filter(None, (absolute_media_url(value) for value in product['images']))))
             parts = [
                 "  <url>",
                 f"<loc>{html.escape(product_page_url(row['id']))}</loc>",
                 f"<lastmod>{lastmod}</lastmod>" if lastmod else "",
                 "<changefreq>weekly</changefreq><priority>0.8</priority>",
             ]
-            if image:
+            for image in images[:1000]:
                 parts.extend(
                     [
                         "<image:image>",
                         f"<image:loc>{html.escape(image)}</image:loc>",
-                        f"<image:title>{html.escape(str(row['name']))}</image:title>",
                         "</image:image>",
                     ]
                 )
@@ -1634,7 +1786,7 @@ class CatalogHandler(BaseHTTPRequestHandler):
             + "\n".join(entries)
             + "\n</urlset>\n"
         )
-        return text_response(self, 200, sitemap, "application/xml; charset=utf-8")
+        return text_response(self, 200, sitemap, "application/xml; charset=utf-8", "no-cache")
 
     def handle_llms(self):
         with connect() as conn:
@@ -1660,16 +1812,17 @@ class CatalogHandler(BaseHTTPRequestHandler):
                 ORDER BY count DESC, category
                 """
             ).fetchall()
-        brand_text = ", ".join(f"{row['brand']} ({row['count']})" for row in brands)
-        category_text = ", ".join(f"{row['category']} ({row['count']})" for row in categories)
+        brand_text = ", ".join(f"[{row['brand']}]({collection_url('brand', row['brand'])}) ({row['count']})" for row in brands)
+        category_text = ", ".join(f"[{row['category']}]({collection_url('category', row['category'])}) ({row['count']})" for row in categories)
         content = f"""# {SEO_SITE_NAME}
 
 > A B2B wholesale cosmetics catalog for browsing products, choosing shades and quantities, and creating an order number for supplier confirmation.
 
 ## Canonical website
 
-- Website: {PUBLIC_BASE_URL}/
-- Product sitemap: {PUBLIC_BASE_URL}/sitemap.xml
+- [Product catalog]({PUBLIC_BASE_URL}/)
+- [Ordering, payment and delivery]({PUBLIC_BASE_URL}/ordering)
+- [Product and collection sitemap]({PUBLIC_BASE_URL}/sitemap.xml)
 - Published products: {product_count}
 
 ## Catalog
@@ -1699,6 +1852,16 @@ class CatalogHandler(BaseHTTPRequestHandler):
 Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the supplier conversation through the WhatsApp action provided by the website.
 """
         return text_response(self, 200, content, "text/plain; charset=utf-8")
+
+    def handle_catalog_page(self, query):
+        with connect() as conn:
+            rows = conn.execute('SELECT * FROM products WHERE published = 1 AND archived_at = 0 ORDER BY sort_order ASC, brand, name').fetchall()
+        products = [product_from_row(row) for row in rows]
+        for field in ('brand', 'category'):
+            value = query.get(field, [''])[0]
+            if value and value != 'All' and not any(p[field] == value for p in products):
+                return self.send_error(404, 'Collection not found')
+        return text_response(self, 200, build_catalog_page(products, query), 'text/html; charset=utf-8', 'no-cache')
 
     def handle_product_page(self, product_id):
         if not product_id:
@@ -1731,7 +1894,7 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
             200,
             page,
             "text/html; charset=utf-8",
-            cache_control="public, max-age=300",
+            cache_control="no-cache",
         )
 
     def handle_products(self, query):
@@ -1934,8 +2097,8 @@ Use the cart on {PUBLIC_BASE_URL}/ to create an order number, then continue the 
         safe = Path(url_path.lstrip("/"))
         if ".." in safe.parts:
             return self.send_error(403)
-        blocked_suffixes = {".py", ".sqlite3", ".db", ".zip", ".xlsx", ".xlsm", ".env", ".service"}
-        blocked_dirs = {"scripts", "__pycache__"}
+        blocked_suffixes = {".py", ".sqlite3", ".db", ".zip", ".xlsx", ".xlsm", ".env", ".service", ".md", ".toml", ".sh", ".sqlite3-wal", ".sqlite3-shm"}
+        blocked_dirs = {"scripts", "__pycache__", "deployment", "backups", "tests"}
         if safe.suffix.lower() in blocked_suffixes or any(part in blocked_dirs or part.startswith(".") for part in safe.parts):
             return self.send_error(403)
         path = ROOT / safe

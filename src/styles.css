@@ -20,6 +20,18 @@ body { margin: 0; min-width: 320px; background: var(--paper); overflow-x: hidden
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .app { min-height: 100vh; }
+.brand, .brand-rail a, a.tag { color: inherit; text-decoration: none; }
+.brand-rail a { overflow-wrap: anywhere; }
+.site-footer, .collection-links { display: flex; gap: 12px 24px; flex-wrap: wrap; align-items: center; }
+.site-footer { padding: 22px 28px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.site-footer a, .collection-links a, .ordering-page a { color: inherit; text-underline-offset: 3px; }
+.collection-links { padding: 24px 0; font-size: 13px; }
+.ordering-page { max-width: 960px; margin: 0 auto; padding: 28px 20px 48px; line-height: 1.7; }
+.ordering-page h1 { font-size: 30px; line-height: 1.2; }
+.ordering-page h2 { margin-top: 28px; font-size: 20px; }
+.seo-product .product-image img, .seo-catalog .product-image img { width: 100%; height: 100%; object-fit: contain; }
+.seo-product h1, .compact-title h1 { overflow-wrap: anywhere; }
+@media (min-width: 1281px) { .app:has(.brand-rail) > .site-footer { margin-left: 164px; } }
 .topbar {
   position: sticky;
   top: 0;
@@ -83,7 +95,7 @@ button { cursor: pointer; }
   font-weight: 800;
   text-transform: uppercase;
 }
-.brand-rail button {
+.brand-rail button, .brand-rail a {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -97,7 +109,7 @@ button { cursor: pointer; }
   text-align: left;
   font-size: 12px;
 }
-.brand-rail button:hover, .brand-rail button.active { border-color: var(--accent); background: #fffaf6; color: var(--accent-strong); }
+.brand-rail button:hover, .brand-rail button.active, .brand-rail a:hover, .brand-rail a.active { border-color: var(--accent); background: #fffaf6; color: var(--accent-strong); }
 .brand-rail span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand-rail em { color: var(--muted); font-style: normal; font-size: 11px; }
 
@@ -161,6 +173,13 @@ button { cursor: pointer; }
   color: var(--ink);
 }
 .search-suggest button:hover { background: var(--soft); }
+.search-field:not(:focus-within) .search-suggest { display: none; }
+.search-suggest { max-height: 360px; overflow-y: auto; }
+@media (max-width: 700px) {
+  .catalog-sticky .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .catalog-sticky .toolbar .search-field { grid-column: 1 / -1; }
+  .catalog-sticky .new-arrivals { min-width: 0; width: 100%; font-size: 13px; align-self: end; }
+}
 .search-suggest small { display: block; color: var(--muted); margin-top: 2px; }
 .suggest-thumb { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 8px; background: var(--soft); overflow: hidden; color: var(--accent-strong); font-weight: 800; }
 .suggest-thumb img { width: 100%; height: 100%; object-fit: contain; }

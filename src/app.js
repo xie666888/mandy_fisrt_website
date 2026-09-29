@@ -2,7 +2,7 @@
   const CART_KEY = "luxe-trade-cart";
   const ADMIN_PAGE_SIZE = 80;
   const SITE_NAME = "BeBeauty Wholesale Catalog";
-  const HOME_TITLE = "Wholesale Cosmetics & Beauty Products Catalog | BeBeauty";
+  const PUBLIC_ORIGIN = "https://bebeauty.top";
   const HOME_DESCRIPTION = "Browse wholesale cosmetics and beauty products by brand, category, SKU, shade and price. Create an order number for supplier confirmation.";
 
   function productIdFromPath() {
@@ -510,32 +510,65 @@
   }
 
   function updatePageMetadata() {
-    const product = state.view === "detail" ? products.find((item) => item.id === state.detailId) : null;
+    const product = state.view === "detail" ? products.find((item) => item.id === state.detailId && item.published !== false && !item.archived_at) : null;
     const privateView = state.view === "admin" || state.view === "cart";
-    const title = product ? `${product.name} Wholesale | ${product.brand} | BeBeauty` : HOME_TITLE;
-    const description = product ? metadataDescription(product) : HOME_DESCRIPTION;
-    const canonical = product ? new URL(productPath(product.id), location.origin).href : `${location.origin}/`;
+    const filters = [["brand", state.brand], ["category", state.category]].filter(([, value]) => value !== "All");
+    const extraParams = [...new URLSearchParams(location.search).keys()].some((key) => !["brand", "category"].includes(key));
+    const collection = state.view === "catalog" && filters.length === 1 && !state.search && !state.newArrivals && !extraParams;
+    const filteredView = state.view === "catalog" && (filters.length > 1 || state.search || state.newArrivals || extraParams);
+    const heading = collection ? `${filters[0][1]} Wholesale Beauty Products` : "Wholesale Beauty Products";
+    const missingProduct = state.view === "detail" && !product;
+    const title = product ? `${product.name} Wholesale | BeBeauty` : missingProduct ? "Product not found | BeBeauty" : `${heading} | BeBeauty`;
+    const description = product ? metadataDescription(product) : collection ? `Browse ${filters[0][1]} wholesale beauty products, USD prices, shade options and product images. Confirm availability with the supplier before payment.` : HOME_DESCRIPTION;
+    const canonical = product ? new URL(productPath(product.id), PUBLIC_ORIGIN).href : collection ? new URL(collectionPath(...filters[0]), PUBLIC_ORIGIN).href : `${PUBLIC_ORIGIN}/`;
     document.title = title;
     setCanonical(canonical);
+    document.head.querySelectorAll('link[rel="alternate"][hreflang]').forEach((link) => { link.href = canonical; });
     setMeta('meta[name="description"]', "content", description);
-    setMeta('meta[name="robots"]', "content", privateView ? "noindex,nofollow" : "index,follow,max-image-preview:large,max-snippet:-1");
+    setMeta('meta[name="robots"]', "content", privateView || missingProduct ? "noindex,nofollow" : filteredView ? "noindex,follow" : "index,follow,max-image-preview:large,max-snippet:-1");
     setMeta('meta[property="og:site_name"]', "content", SITE_NAME);
     setMeta('meta[property="og:type"]', "content", product ? "product" : "website");
     setMeta('meta[property="og:title"]', "content", title);
     setMeta('meta[property="og:description"]', "content", description);
     setMeta('meta[property="og:url"]', "content", canonical);
-    if (product?.image) {
-      setMeta('meta[property="og:image"]', "content", new URL(product.image.replace(/^\.\//, "/"), location.origin).href);
+    const image = product?.image ? new URL(product.image.replace(/^\.\//, "/"), PUBLIC_ORIGIN).href : "";
+    if (image) setMeta('meta[property="og:image"]', "content", image);
+    else document.head.querySelector('meta[property="og:image"]')?.remove();
+    setMeta('meta[name="twitter:card"]', "content", image ? "summary_large_image" : "summary");
+    const organization = { "@type": "Organization", "@id": `${PUBLIC_ORIGIN}/#organization`, name: SITE_NAME, alternateName: "Luxe Trade Catalog", url: `${PUBLIC_ORIGIN}/` };
+    const graph = [organization, { "@type": "WebSite", "@id": `${PUBLIC_ORIGIN}/#website`, name: SITE_NAME, url: `${PUBLIC_ORIGIN}/`, publisher: { "@id": organization["@id"] } }];
+    if (product) {
+      graph.push({ "@type": "Product", "@id": `${canonical}#product`, name: product.name, sku: product.sku, category: product.category, description, url: canonical,
+        brand: { "@type": "Brand", name: product.brand }, ...(image ? { image: productImages(product).map((value) => new URL(value, PUBLIC_ORIGIN).href) } : {}),
+        offers: { "@type": "Offer", url: canonical, priceCurrency: "USD", price: Number(product.price).toFixed(2), seller: { "@id": organization["@id"] } } });
+      graph.push({ "@type": "BreadcrumbList", itemListElement: [["Wholesale beauty products", `${PUBLIC_ORIGIN}/`], [product.brand, new URL(collectionPath("brand", product.brand), PUBLIC_ORIGIN).href], [product.name, canonical]].map(([name, item], index) => ({ "@type": "ListItem", position: index + 1, name, item })) });
+    } else if (!privateView && !missingProduct) {
+      const list = filteredProducts();
+      graph.push({ "@type": "CollectionPage", name: heading, description, url: canonical, isPartOf: { "@id": `${PUBLIC_ORIGIN}/#website` }, mainEntity: { "@type": "ItemList", numberOfItems: list.length, itemListElement: list.map((item, index) => ({ "@type": "ListItem", position: index + 1, name: item.name, url: new URL(productPath(item.id), PUBLIC_ORIGIN).href })) } });
+    }
+    if (!privateView && !missingProduct) graph.push({ "@type": "FAQPage", mainEntity: PRODUCT_QA.map(([name, text]) => ({ "@type": "Question", name, acceptedAnswer: { "@type": "Answer", text } })) });
+    // Replace server metadata when SPA navigation changes the visible page.
+    document.head.querySelectorAll('script[type="application/ld+json"]').forEach((script) => script.remove());
+    if (!privateView && !missingProduct) {
+      const script = document.createElement("script");
+      script.type = "application/ld+json";
+      script.textContent = JSON.stringify({ "@context": "https://schema.org", "@graph": graph });
+      document.head.appendChild(script);
     }
   }
 
-  function updateCatalogUrl() {
+  function collectionPath(field, value) {
+    return `/?${new URLSearchParams({ [field]: value })}`;
+  }
+
+  function updateCatalogUrl(replace = false) {
     const params = new URLSearchParams();
     if (state.newArrivals) params.set("new", "1");
     if (state.brand !== "All") params.set("brand", state.brand);
     if (state.category !== "All") params.set("category", state.category);
+    if (state.search) params.set("q", state.search);
     const query = params.toString();
-    history.pushState({ view: "catalog" }, "", query ? `/?${query}` : "/");
+    history[replace ? "replaceState" : "pushState"]({ view: "catalog" }, "", query ? `/?${query}` : "/");
   }
 
   function openDetail(id, pushHistory = true) {
@@ -568,7 +601,7 @@
     document.getElementById("app").innerHTML = `
       <div class="app">
         <header class="topbar">
-          <div class="brand" role="button" data-view="catalog"><span class="brand-mark">L</span><span>Luxe Trade Catalog</span></div>
+          <a class="brand" href="/" data-view="catalog"><span class="brand-mark">L</span><span>Luxe Trade Catalog</span></a>
           <nav class="nav">
             <button class="${state.view === "catalog" ? "active" : ""}" data-view="catalog">Products</button>
             <button class="${state.view === "admin" ? "active" : ""}" data-view="admin">Admin</button>
@@ -576,6 +609,7 @@
           </nav>
         </header>
         ${content}
+        ${state.view === "catalog" || state.view === "detail" ? '<footer class="site-footer"><a href="/">Product catalog</a><a href="/ordering">Ordering &amp; delivery</a><a href="/sitemap.xml">Sitemap</a><span>Prices in USD. Availability confirmed by supplier.</span></footer>' : ""}
         ${cartFeedbackHTML()}
         ${quickAddModalHTML()}
       </div>`;
@@ -606,6 +640,7 @@
   }
 
   function renderCatalog() {
+    updatePageMetadata();
     const list = filteredProducts();
     const visibleProducts = products.filter((p) => p.published !== false);
     layout(`
@@ -626,10 +661,12 @@
         ${activeFilterChips()}
       </div>
       <main class="content">
-        <div class="section-title compact-title"><div><h1>Wholesale Beauty Products</h1><p>${list.length} matching items</p></div></div>
+        <div class="section-title compact-title"><div><h1>${state.brand !== "All" && state.category === "All" ? `${escapeHTML(state.brand)} Wholesale Beauty Products` : state.category !== "All" && state.brand === "All" ? `${escapeHTML(state.category)} Wholesale Beauty Products` : "Wholesale Beauty Products"}</h1><p>${list.length} matching items</p></div></div>
         <div class="grid">
           ${list.map((product, index) => productCard(product, index)).join("")}
         </div>
+        <nav class="collection-links" aria-label="Categories">${categories().filter((value) => value !== "All").map((value) => `<a href="${escapeHTML(collectionPath("category", value))}" data-filter-category="${escapeHTML(value)}">${escapeHTML(value)}</a>`).join("")}</nav>
+        ${qaSection()}
       </main>`);
   }
 
@@ -647,9 +684,9 @@
           <span>All</span><em>${visibleProducts.length}</em>
         </button>
         ${brandItems.map((brand) => `
-          <button class="${state.brand === brand ? "active" : ""}" data-filter-brand="${escapeHTML(brand)}" title="Show ${escapeHTML(brand)} products">
+          <a href="${escapeHTML(collectionPath("brand", brand))}" class="${state.brand === brand ? "active" : ""}" data-filter-brand="${escapeHTML(brand)}" title="Show ${escapeHTML(brand)} products">
             <span>${escapeHTML(brand)}</span><em>${counts.get(brand) || 0}</em>
-          </button>`).join("")}
+          </a>`).join("")}
       </aside>`;
   }
 
@@ -660,8 +697,8 @@
         <a class="product-image" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}" aria-label="View ${escapeHTML(p.name)}">${productImage(p, index < 5 ? "eager" : "lazy")}</a>
         <div class="card-body">
           <div class="meta">
-            <button class="tag tag-button" data-filter-brand="${escapeHTML(p.brand)}" title="Show all ${escapeHTML(p.brand)} products">${escapeHTML(p.brand)}</button>
-            <button class="tag tag-button" data-filter-category="${escapeHTML(p.category)}" title="Show all ${escapeHTML(p.category)} products">${escapeHTML(p.category)}</button>
+            <a class="tag tag-button" href="${escapeHTML(collectionPath("brand", p.brand))}" data-filter-brand="${escapeHTML(p.brand)}" title="Show all ${escapeHTML(p.brand)} products">${escapeHTML(p.brand)}</a>
+            <a class="tag tag-button" href="${escapeHTML(collectionPath("category", p.category))}" data-filter-category="${escapeHTML(p.category)}" title="Show all ${escapeHTML(p.category)} products">${escapeHTML(p.category)}</a>
           </div>
           <h3><a class="product-title-link" href="${escapeHTML(productPath(p.id))}" data-detail="${escapeHTML(p.id)}">${escapeHTML(p.name)}</a>${p.is_best_seller ? ' <span class="best-seller">best seller</span>' : ""}</h3>
           <p class="desc">${escapeHTML(p.description)}</p>
@@ -673,8 +710,8 @@
   }
 
   function renderDetail() {
-    const p = products.find((item) => item.id === state.detailId) || products[0];
-    if (!p) return renderCatalog();
+    const p = products.find((item) => item.id === state.detailId && item.published !== false && !item.archived_at);
+    if (!p) return layout('<main class="content"><h1>Product not found</h1><p>This product is no longer available.</p><a href="/">Browse products</a></main>');
     const options = shadeOptions(p);
     if (!options.includes(state.selectedColor)) state.selectedColor = options[0];
     const images = productImages(p);
@@ -1190,8 +1227,12 @@
   }
 
   document.addEventListener("click", async (event) => {
-    const target = event.target.closest("button, a[data-detail], .brand, [data-quick-backdrop]");
+    const target = event.target.closest("button, a[data-detail], a[data-filter-brand], a[data-filter-category], .brand, [data-quick-backdrop]");
     if (!target) return;
+    if (target.tagName === "A") {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+    }
     if (target.hasAttribute("data-new-arrivals")) {
       state.newArrivals = !state.newArrivals;
       updateCatalogUrl();
@@ -1238,11 +1279,8 @@
     if (target.dataset.view) {
       state.view = target.dataset.view;
       state.detailId = null;
-      history.pushState(
-        { view: state.view },
-        "",
-        state.view === "catalog" ? "/" : `/#${state.view}`
-      );
+      if (state.view === "catalog") updateCatalogUrl();
+      else history.pushState({ view: state.view }, "", `/#${state.view}`);
       render();
       return;
     }
@@ -1376,12 +1414,17 @@
     }
   });
 
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && event.target.closest(".search-field")) event.target.blur();
+  });
+
   document.addEventListener("input", (event) => {
     const el = event.target;
     if (el.dataset.action === "search") {
       const start = el.selectionStart ?? el.value.length;
       const end = el.selectionEnd ?? start;
       state.search = el.value;
+      updateCatalogUrl(true);
       renderCatalog();
       refocusControl('[data-action="search"]', start, end);
     }

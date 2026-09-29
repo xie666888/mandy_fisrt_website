@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Certbot deploy hook, primary only. Keys never enter application replication.
+readonly SOURCE=/etc/letsencrypt/live/bebeauty.top
+readonly TARGET=/etc/nginx/ssl/bebeauty.top
+[[ "${RENEWED_LINEAGE:-$SOURCE}" == "$SOURCE" ]] || exit 0
+[[ -f "$SOURCE/fullchain.pem" && -f "$SOURCE/privkey.pem" ]] || exit 1
+readonly BACKUP="$(mktemp -d /var/tmp/luxe-tls.XXXXXX)"
+trap 'rm -f "$BACKUP/fullchain.crt" "$BACKUP/private.key"; rmdir "$BACKUP"' EXIT
+cp -p "$TARGET/fullchain.crt" "$BACKUP/fullchain.crt"
+cp -p "$TARGET/private.key" "$BACKUP/private.key"
+install -m 0644 "$SOURCE/fullchain.pem" "$TARGET/fullchain.crt"
+install -m 0600 "$SOURCE/privkey.pem" "$TARGET/private.key"
+if nginx -t && systemctl reload nginx; then
+    echo 'BeBeauty certificate installed and Nginx reloaded.'
+else
+    cp -p "$BACKUP/fullchain.crt" "$TARGET/fullchain.crt"
+    cp -p "$BACKUP/private.key" "$TARGET/private.key"
+    echo 'Certificate installation failed; previous files restored.' >&2
+    exit 1
+fi

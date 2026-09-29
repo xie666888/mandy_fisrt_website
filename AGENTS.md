@@ -56,8 +56,12 @@ Both cloud servers use the same application layout:
 The Python application listens only on `127.0.0.1:4173`. Nginx is the public
 entry point. Do not expose port `4173`.
 
-The current `bebeauty.top` certificate covers the root and `www` names and
-expires on 2026-10-01. Renew and install its replacement before expiry. Never
+The `bebeauty.top` certificate covers the root and `www` names. Certbot now
+manages `/etc/letsencrypt/live/bebeauty.top/`; the deploy hook
+`/etc/letsencrypt/renewal-hooks/deploy/30-luxe-certificate` installs renewed
+files into the Nginx paths above and validates/reloads Nginx. The certificate
+issued on 2026-09-30 expires on 2026-12-28; verify live dates and the
+`certbot-renew.timer` rather than relying on this date. Never
 commit or synchronize the certificate private key through Git or application
 rsync. Keep `HTTPS=1` so admin session cookies retain the `Secure` flag.
 
@@ -209,6 +213,24 @@ easier.
 
 ## 9. SEO And GEO Invariants
 
+- Read `SEO_GEO_GUIDE.md` for the research, release checks, account-level next
+  steps and platform eligibility limitations. Do not promise rankings or AI citations.
+- Home and single-brand/category URLs are server-rendered from public SQLite
+  rows. Nginx `location = /` MUST proxy to Python, not serve the empty static
+  `index.html`. `/index.html` and HTTPS www redirect to canonical locations.
+- Single-brand/category pages use self canonicals; combined filters, internal
+  searches and NEW ARRIVALS use noindex,follow. Empty/unknown collections return
+  404. Keep collection links as real anchors with optional JS enhancement.
+- Refresh canonical, social metadata and JSON-LD on SPA navigation. Remove stale
+  product metadata on the catalog and all JSON-LD on admin/cart views.
+- `/ordering` is a factual, script-free ordering/delivery reference linked from
+  storefront footers. FAQ claims must match visible content, without inventing
+  policies. FAQ schema is NOT a promise of Google FAQ rich results.
+- IndexNow runs on Tencent only through `luxe-indexnow.timer`. Its public proof
+  key and submission ledger live outside Git in `/var/lib/luxe-search`.
+  `/indexnow-key.txt` exposes only the public verification key. Submissions
+  contain only changed/deleted public sitemap URLs, never orders/customer data.
+  Do not enable the timer on Alibaba. HTTP 200/202 means accepted, not indexed.
 - The canonical public origin is `https://bebeauty.top`.
 - Every published product has a stable, crawlable
   `/product/<percent-encoded-product-id>` URL. Keep product IDs stable.
@@ -275,7 +297,10 @@ For each release, check at minimum:
   font scheme
 - `/robots.txt`, `/sitemap.xml`, `/llms.txt`, and a sample `/product/...` URL
   return HTTP `200`
-- Sitemap URL count equals published product count plus one home URL
+- Sitemap URL count equals published product count + distinct nonempty brands
+  and categories (excluding the filter sentinel `All`) + home + ordering page
+- `python scripts/test_seo.py` passes. Check server-rendered HTML without JS,
+  single-collection canonicals, unknown product 404s and SPA metadata changes.
 - Product HTML contains canonical, Product JSON-LD and semantic product content
 - Tencent and Alibaba product/order counts match after replication
 
